@@ -1,11 +1,12 @@
 # Compile SXM Mail pour macOS sur les Mac de GitHub, et fournit le .dmg à télécharger.
 # Lancement : onglet « Actions » du dépôt → « Build macOS » → « Run workflow »
-# (ou automatiquement en poussant une étiquette v0.x.y).
+# (ou automatiquement à chaque envoi sur la branche main, ou avec une étiquette v0.x.y).
 name: Build macOS
 
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     tags: ["v*"]
 
 jobs:
