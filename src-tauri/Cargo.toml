@@ -1,0 +1,26 @@
+[package]
+name = "sxm-mail"
+version = "0.2.1"
+description = "Client mail de bureau multi-comptes (Gmail, Office 365, Hotmail)"
+edition = "2021"
+
+[lib]
+name = "sxm_mail_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+sxm-core = { path = "../core" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

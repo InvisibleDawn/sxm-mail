@@ -1,0 +1,40 @@
+# Compile SXM Mail pour macOS sur les Mac de GitHub, et fournit le .dmg à télécharger.
+# Lancement : onglet « Actions » du dépôt → « Build macOS » → « Run workflow »
+# (ou automatiquement en poussant une étiquette v0.x.y).
+name: Build macOS
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # Binaire « universel » : fonctionne sur les Mac Intel (ex. MacBook Pro 2019) et Apple Silicon.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Outil de build Tauri
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Tests du cœur
+        run: cargo test --manifest-path core/Cargo.toml
+
+      - name: Compilation de l'application
+        run: cargo tauri build --target universal-apple-darwin --bundles app,dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SXM-Mail-macOS
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error

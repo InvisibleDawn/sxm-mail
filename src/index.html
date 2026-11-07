@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SXM Mail</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+
+  <header class="topbar">
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+      <span>SXM Mail</span>
+    </div>
+    <div class="search">
+      <svg class="search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <label for="q" class="sr-only">Rechercher</label>
+      <input id="q" type="search" placeholder="Rechercher" autocomplete="off">
+    </div>
+    <div class="top-actions">
+      <button type="button" id="btn-refresh" class="icon-btn btn-refresh" aria-label="Actualiser" title="Actualiser (F5)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
+      <button type="button" id="btn-theme" class="icon-btn" aria-label="Changer de thème" title="Thème clair / sombre">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ribbon" role="toolbar" aria-label="Actions">
+    <button class="btn-compose" id="btn-compose" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      Nouveau courrier
+    </button>
+    <span class="ribbon-sep" aria-hidden="true"></span>
+    <div class="toolbar" id="toolbar"></div>
+  </div>
+
+  <div class="app">
+    <nav class="sidebar pane" aria-label="Comptes et dossiers">
+      <div class="side-title">Dossiers</div>
+      <div id="folders" class="folders"></div>
+      <div class="side-title">Comptes</div>
+      <div id="accounts" class="accounts"></div>
+      <div class="spacer"></div>
+      <button class="btn-ghost" id="btn-add-account" type="button">+ Ajouter un compte</button>
+      <div class="side-foot"><span id="app-version">SXM Mail</span></div>
+    </nav>
+
+    <section class="list pane" aria-label="Liste des messages">
+      <div id="tabs" class="tabs"></div>
+      <div id="messages" class="messages"></div>
+    </section>
+
+    <main class="reader" aria-label="Lecture">
+      <article id="reading" class="reading pane"></article>
+    </main>
+  </div>
+</div>
+
+<dialog id="compose" aria-labelledby="compose-title">
+  <form method="dialog" id="compose-form">
+    <h2 id="compose-title">Nouveau message</h2>
+    <label for="c-from">De</label><select id="c-from"></select>
+    <label for="c-to">À</label><input id="c-to" type="email" placeholder="destinataire@exemple.com">
+    <label for="c-subj">Objet</label><input id="c-subj" type="text">
+    <label for="c-body">Message</label><textarea id="c-body" rows="10"></textarea>
+    <div class="dialog-actions">
+      <button value="cancel" type="submit" class="btn-ghost">Annuler</button>
+      <button id="c-send" type="button" class="btn-primary">Envoyer</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="add-dialog" aria-labelledby="add-title">
+  <h2 id="add-title">Ajouter un compte</h2>
+  <div class="add-choices">
+    <button type="button" class="btn-primary" data-provider="google">Gmail</button>
+  </div>
+  <div class="dialog-actions"><button id="add-cancel" type="button" class="btn-ghost">Annuler</button></div>
+</dialog>
+
+<dialog id="info" aria-labelledby="info-title">
+  <h2 id="info-title"></h2>
+  <p id="info-text" class="info-text"></p>
+  <div class="dialog-actions"><button id="info-close" type="button" class="btn-primary">OK</button></div>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
