@@ -9,6 +9,9 @@ on:
     branches: [main]
     tags: ["v*"]
 
+permissions:
+  contents: write
+
 jobs:
   macos:
     runs-on: macos-latest
@@ -39,3 +42,17 @@ jobs:
           name: SXM-Mail-macOS
           path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
+
+      # Page « Releases » publique : lien de téléchargement sans connexion à GitHub.
+      - name: Numéro de version
+        id: v
+        run: echo "version=$(python3 -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")" >> "$GITHUB_OUTPUT"
+
+      - name: Publication sur la page Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.v.outputs.version }}
+          name: SXM Mail ${{ steps.v.outputs.version }}
+          body: "Version macOS (universelle : Mac Intel et Apple Silicon). Non signée par Apple : au premier lancement, Réglages Système → Confidentialité et sécurité → Ouvrir quand même."
+          files: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          fail_on_unmatched_files: true
