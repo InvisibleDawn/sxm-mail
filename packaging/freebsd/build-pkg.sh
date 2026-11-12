@@ -32,7 +32,7 @@ DEPS=$(
       [ -n "$path" ] && pkg which -q "$path" 2>/dev/null || true
     done
     for extra in xdg-utils gnome-keyring dbus; do pkg query '%n-%v' "$extra" 2>/dev/null || true; done
-  } | grep -v '^$' | sort -u
+  } | grep -v '^$' | grep -v '^FreeBSD-' | sort -u   # FreeBSD-* : système de base, toujours présent
 )
 
 {
