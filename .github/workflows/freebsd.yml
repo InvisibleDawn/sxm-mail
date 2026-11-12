@@ -34,8 +34,8 @@ jobs:
             # La VM peut être un peu plus ancienne que les paquets du dépôt officiel.
             export IGNORE_OSVERSION=yes ASSUME_ALWAYS_YES=yes
             pkg update -f
-            pkg install -y rust pkgconf gmake webkit2-gtk_41 gtk3 libsoup3 glib cairo pango \
-              gdk-pixbuf2 atk harfbuzz librsvg2-rust xdg-utils gnome-keyring dbus
+            pkg install -y rust pkgconf webkit2-gtk_41 gtk3 libsoup3 librsvg2-rust \
+              xdg-utils gnome-keyring dbus
           run: |
             set -e
             rustc --version
