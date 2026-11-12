@@ -22,11 +22,15 @@ install -m 644 packaging/freebsd/sxm-mail.desktop "$P/share/applications/sxm-mai
 install -m 644 src-tauri/icons/32x32.png "$P/share/icons/hicolor/32x32/apps/sxm-mail.png"
 install -m 644 src-tauri/icons/128x128.png "$P/share/icons/hicolor/128x128/apps/sxm-mail.png"
 
-# Dépendances : les paquets qui fournissent les bibliothèques du binaire,
-# plus ceux utilisés à l'exécution (ouverture des liens, trousseau, D-Bus).
+# Dépendances : les paquets qui fournissent les bibliothèques liées directement au binaire
+# (pkg installe lui-même les dépendances de ces paquets), plus ceux utilisés à l'exécution
+# (ouverture des liens, trousseau, D-Bus).
 DEPS=$(
   {
-    ldd -f '%p\n' "$BIN" | while read -r lib; do pkg which -q "$lib" 2>/dev/null || true; done
+    readelf -d "$BIN" | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' | while read -r name; do
+      path=$(ldd "$BIN" | awk -v n="$name" '$1 == n { print $3 }')
+      [ -n "$path" ] && pkg which -q "$path" 2>/dev/null || true
+    done
     for extra in xdg-utils gnome-keyring dbus; do pkg query '%n-%v' "$extra" 2>/dev/null || true; done
   } | grep -v '^$' | sort -u
 )

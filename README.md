@@ -40,11 +40,11 @@ Le binaire est « universel » : il fonctionne sur les Mac Intel et Apple Silico
 
 ## Version FreeBSD (compilée par GitHub)
 
-`.github/workflows/freebsd.yml` compile l'application dans une machine virtuelle FreeBSD (14.3 et 15.1, amd64)
+`.github/workflows/freebsd.yml` compile l'application dans une machine virtuelle FreeBSD (15.1, amd64)
 et produit un paquet `.pkg`.
 
 1. Onglet **Actions** → **Build FreeBSD** → dernière exécution → **Artifacts** → télécharge
-   **SXM-Mail-FreeBSD-15.1** (ou 14.3, selon `freebsd-version`). Une fois la branche fusionnée dans `main`,
+   **SXM-Mail-FreeBSD-15.1**. Une fois la branche fusionnée dans `main`,
    les `.pkg` sont aussi sur la page **Releases**.
 2. Installation (les dépendances viennent du dépôt officiel) :
    ```sh
