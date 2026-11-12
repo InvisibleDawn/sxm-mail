@@ -19,8 +19,8 @@ native-tls = "0.2"
 mailparse = "0.15"
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "native-tls", "builder"] }
 
-# Trousseau système : Secret Service (GNOME Keyring / KWallet) sous Linux, Trousseau d'accès sous macOS.
-[target.'cfg(target_os = "linux")'.dependencies]
+# Trousseau système : Secret Service (GNOME Keyring / KWallet) sous Linux et FreeBSD, Trousseau d'accès sous macOS.
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
 keyring = { version = "3", default-features = false, features = ["sync-secret-service", "crypto-rust", "vendored"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

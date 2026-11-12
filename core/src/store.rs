@@ -28,8 +28,33 @@ pub fn config_dir() -> Result<PathBuf> {
     let dir = dirs::config_dir()
         .ok_or_else(|| anyhow!("dossier de configuration introuvable"))?
         .join("sxm-mail");
-    std::fs::create_dir_all(&dir).context("création du dossier de configuration")?;
+    private_dir(&dir).context("création du dossier de configuration")?;
     Ok(dir)
+}
+
+/// Crée le dossier si besoin et le réserve à l'utilisateur (droits 700) :
+/// les autres comptes de la machine ne peuvent ni lister ni lire son contenu.
+fn private_dir(dir: &std::path::Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::create_dir_all(dir)?;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    Ok(())
+}
+
+/// Écriture atomique d'un fichier lisible par l'utilisateur seul (droits 600).
+fn write_private(path: &std::path::Path, data: &[u8]) -> Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let tmp = path.with_extension("json.tmp");
+    {
+        let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp)?;
+        // Un ancien fichier temporaire aurait pu garder des droits plus larges.
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        f.write_all(data)?;
+        f.sync_all()?;
+    }
+    std::fs::rename(tmp, path)?;
+    Ok(())
 }
 
 pub fn config_path() -> Result<PathBuf> {
@@ -40,6 +65,11 @@ pub fn load_config() -> Result<Config> {
     let path = config_path()?;
     if !path.exists() {
         return Ok(Config::default());
+    }
+    // config.json contient le secret client Google : on le remet en 600 s'il a été créé trop ouvert.
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     }
     let raw = std::fs::read_to_string(&path).with_context(|| format!("lecture de {}", path.display()))?;
     serde_json::from_str(&raw).with_context(|| format!("{} n'est pas un JSON valide", path.display()))
@@ -58,11 +88,7 @@ pub fn list_accounts() -> Result<Vec<Account>> {
 }
 
 fn save_accounts(list: &[Account]) -> Result<()> {
-    let path = accounts_path()?;
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(list)?)?;
-    std::fs::rename(tmp, path)?; // écriture atomique
-    Ok(())
+    write_private(&accounts_path()?, &serde_json::to_vec_pretty(list)?)
 }
 
 /// Ajoute le compte, ou met à jour celui qui a la même adresse.
@@ -114,7 +140,7 @@ pub fn load_refresh_token(account_id: &str) -> Result<String> {
 /// Cache de la liste des mails (démarrage instantané). Fichier lisible par l'utilisateur seul.
 fn cache_path() -> Result<PathBuf> {
     let dir = dirs::cache_dir().ok_or_else(|| anyhow!("dossier de cache introuvable"))?.join("sxm-mail");
-    std::fs::create_dir_all(&dir)?;
+    private_dir(&dir)?;
     Ok(dir.join("messages.json"))
 }
 
@@ -134,14 +160,5 @@ pub fn save_cache(data: &str) -> Result<()> {
         anyhow::bail!("cache trop volumineux");
     }
     serde_json::from_str::<serde_json::Value>(data).context("cache invalide")?;
-    let path = cache_path()?;
-    let tmp = path.with_extension("json.tmp");
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp)?;
-        f.write_all(data.as_bytes())?;
-    }
-    std::fs::rename(tmp, path)?;
-    Ok(())
+    write_private(&cache_path()?, data.as_bytes())
 }

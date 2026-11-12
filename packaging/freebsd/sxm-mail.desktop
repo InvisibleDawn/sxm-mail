@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SXM Mail
+Comment=Client mail pour Gmail
+Exec=sxm-mail
+Icon=sxm-mail
+Terminal=false
+Categories=Network;Email;
+StartupWMClass=sxm-mail

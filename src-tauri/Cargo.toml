@@ -1,6 +1,6 @@
 [package]
 name = "sxm-mail"
-version = "0.2.1"
+version = "0.2.2"
 description = "Client mail de bureau multi-comptes (Gmail, Office 365, Hotmail)"
 edition = "2021"
 

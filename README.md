@@ -38,6 +38,34 @@ Le dépôt contient `.github/workflows/macos.yml` : GitHub compile l'application
 
 Le binaire est « universel » : il fonctionne sur les Mac Intel et Apple Silicon.
 
+## Version FreeBSD (compilée par GitHub)
+
+`.github/workflows/freebsd.yml` compile l'application dans une machine virtuelle FreeBSD (14.3 et 15.0, amd64)
+et produit un paquet `.pkg`.
+
+1. Onglet **Actions** → **Build FreeBSD** → dernière exécution → **Artifacts** → télécharge
+   **SXM-Mail-FreeBSD-15.0** (ou 14.3, selon `freebsd-version`). Une fois la branche fusionnée dans `main`,
+   les `.pkg` sont aussi sur la page **Releases**.
+2. Installation (les dépendances viennent du dépôt officiel) :
+   ```sh
+   unzip SXM-Mail-FreeBSD-15.0.zip
+   sudo pkg add ./sxm-mail-*-freebsd15.0-amd64.pkg
+   ```
+3. Le trousseau doit tourner pour garder le jeton Gmail : D-Bus actif (`sudo sysrc dbus_enable=YES && sudo service dbus start`)
+   et GNOME Keyring lancé avec la session MATE (installé avec le paquet).
+4. `config.json` va dans `~/.config/sxm-mail/config.json`, comme sous Fedora.
+
+Sécurité : le dossier `~/.config/sxm-mail` et le cache `~/.cache/sxm-mail` sont en droits 700, et les fichiers
+`config.json`, `accounts.json` et `messages.json` en droits 600 (lisibles par toi seul). Le jeton Gmail n'est jamais
+écrit sur le disque en clair : il est rangé dans le trousseau.
+
+Compiler à la main sur FreeBSD :
+```sh
+sudo pkg install rust pkgconf webkit2-gtk_41 gtk3 libsoup3 librsvg2-rust xdg-utils gnome-keyring
+cargo build --release --features tauri/custom-protocol --manifest-path src-tauri/Cargo.toml
+sh packaging/freebsd/build-pkg.sh      # -> dist/sxm-mail-<version>.pkg
+```
+
 ## Connecter Gmail
 
 Voir `docs/GOOGLE.md` (création du Client ID Google, ~10 min), puis « + Ajouter un compte » dans l'application.

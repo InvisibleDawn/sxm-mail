@@ -1,0 +1,68 @@
+# Compile SXM Mail dans une machine virtuelle FreeBSD (GitHub n'a pas de machine FreeBSD native)
+# et fournit le paquet .pkg à télécharger.
+# Lancement : onglet « Actions » → « Build FreeBSD » → « Run workflow »,
+# ou automatiquement à chaque envoi sur main / freebsd, ou avec une étiquette v0.x.y.
+name: Build FreeBSD
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, freebsd]
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  freebsd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ["14.3", "15.0"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compilation dans FreeBSD ${{ matrix.release }}
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: ${{ matrix.release }}
+          usesh: true
+          mem: 12288
+          prepare: |
+            # Dépôt « latest » : Rust récent, indispensable pour les dépendances actuelles.
+            mkdir -p /usr/local/etc/pkg/repos
+            printf 'FreeBSD: { url: "pkg+http://pkg.FreeBSD.org/${ABI}/latest" }\n' > /usr/local/etc/pkg/repos/FreeBSD.conf
+            pkg update -f
+            pkg install -y rust pkgconf gmake webkit2-gtk_41 gtk3 libsoup3 glib cairo pango \
+              gdk-pixbuf2 atk harfbuzz librsvg2-rust xdg-utils gnome-keyring dbus
+          run: |
+            set -e
+            rustc --version
+            cargo test --manifest-path core/Cargo.toml
+            cargo build --release --features tauri/custom-protocol --manifest-path src-tauri/Cargo.toml
+            sh packaging/freebsd/build-pkg.sh
+            # Nom du fichier : version FreeBSD incluse.
+            for f in dist/*.pkg; do mv "$f" "${f%.pkg}-freebsd${{ matrix.release }}-amd64.pkg"; done
+            ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SXM-Mail-FreeBSD-${{ matrix.release }}
+          path: dist/*.pkg
+          if-no-files-found: error
+
+      - name: Numéro de version
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        id: v
+        run: echo "version=$(python3 -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")" >> "$GITHUB_OUTPUT"
+
+      - name: Publication sur la page Releases
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.v.outputs.version }}
+          name: SXM Mail ${{ steps.v.outputs.version }}
+          files: dist/*.pkg
+          fail_on_unmatched_files: true
