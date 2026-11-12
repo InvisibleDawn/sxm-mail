@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        release: ["14.3", "15.0"]
+        release: ["14.3", "15.1"]
     steps:
       - uses: actions/checkout@v4
 
