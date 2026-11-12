@@ -31,9 +31,8 @@ jobs:
           usesh: true
           mem: 12288
           prepare: |
-            # Dépôt « latest » : Rust récent, indispensable pour les dépendances actuelles.
-            mkdir -p /usr/local/etc/pkg/repos
-            printf 'FreeBSD: { url: "pkg+http://pkg.FreeBSD.org/${ABI}/latest" }\n' > /usr/local/etc/pkg/repos/FreeBSD.conf
+            # La VM peut être un peu plus ancienne que les paquets du dépôt officiel.
+            export IGNORE_OSVERSION=yes ASSUME_ALWAYS_YES=yes
             pkg update -f
             pkg install -y rust pkgconf gmake webkit2-gtk_41 gtk3 libsoup3 glib cairo pango \
               gdk-pixbuf2 atk harfbuzz librsvg2-rust xdg-utils gnome-keyring dbus
