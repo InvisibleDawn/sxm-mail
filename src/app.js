@@ -31,10 +31,10 @@ const DEMO_ACCOUNTS = ACCOUNTS.slice();
 const DEMO_MESSAGES = MESSAGES.map((m) => ({ ...m }));
 
 const FOLDERS = [
-  { id: 'inbox', label: 'Boîte de réception' },
-  { id: 'pinned', label: 'Épinglés' },
-  { id: 'snoozed', label: 'Rappels' },
-  { id: 'sent', label: 'Éléments envoyés' },
+  { id: 'inbox', label: 'Boîte de réception', icon: 'inbox' },
+  { id: 'pinned', label: 'Épinglés', icon: 'pin' },
+  { id: 'snoozed', label: 'Rappels', icon: 'snooze' },
+  { id: 'sent', label: 'Éléments envoyés', icon: 'send' },
 ];
 const SECTIONS = [
   { id: 'people', label: 'Personnes' },
@@ -57,8 +57,11 @@ const ICON = {
   snooze: svg('<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/>'),
   move: svg('<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>'),
   clip: svg('<path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.3 3.3 0 0 1 4.7 4.7L10 17.4a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/>'),
+  inbox: svg('<path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5.5 5h13L21 13v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5Z"/>'),
+  send: svg('<path d="m21 3-9.5 9.5"/><path d="M21 3 14.5 21l-3-8.5L3 9.5Z"/>'),
   delete: svg('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>'),
 };
+const EMPTY_READER = `<div class="reader-empty"><svg viewBox="0 0 200 120" aria-hidden="true"><path class="wave1" d="M0 84 C50 60 90 96 140 74 S190 56 200 64 V120 H0z"/><path class="wave2" d="M0 100 C60 84 120 112 200 94 V120 H0z"/><rect x="62" y="22" width="76" height="52" rx="9" fill="#1F5FD1"/><path d="m68 30 32 23 32-23" fill="none" stroke="#CFE0FF" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/></svg><strong>Aucun message sélectionné</strong><span>Choisis un message dans la liste pour le lire ici.</span></div>`;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = (n) => n.split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
@@ -97,7 +100,7 @@ function renderFolders() {
     const n = f.id === 'inbox' ? pool.filter((m) => m.state === 'inbox' && m.unread).length
       : f.id === 'pinned' ? pool.filter((m) => m.pinned).length
       : pool.filter((m) => m.state === f.id).length;
-    return `<button type="button" class="folder ${f.id === st.folder ? 'on' : ''}" data-folder="${f.id}"><span>${f.label}</span><span class="count">${n || ''}</span></button>`;
+    return `<button type="button" class="folder ${f.id === st.folder ? 'on' : ''}" data-folder="${f.id}">${ICON[f.icon]}<span class="f-label">${f.label}</span><span class="count">${n || ''}</span></button>`;
   }).join('');
 }
 
@@ -145,14 +148,15 @@ function renderList() {
 function renderReader() {
   const m = byId(st.sel);
   const bar = $('toolbar');
-  if (!m) { bar.innerHTML = ''; $('reading').innerHTML = '<div class="empty">Sélectionne un message.</div>'; return; }
+  if (!m) { bar.innerHTML = ''; $('reading').innerHTML = EMPTY_READER; return; }
   const actions = [['reply', 'Répondre', 'R'], ['delete', 'Supprimer', '#'], ['archive', 'Archiver', 'E'], ['pin', m.pinned ? 'Désépingler' : 'Épingler', 'S'], ['snooze', 'Rappeler plus tard', 'H']];
   if (m.state === 'inbox') actions.push(['move', tabOf(m) === 'focused' ? 'Déplacer vers Autres' : 'Déplacer vers Prioritaire', 'M']);
   bar.innerHTML = actions
     .map(([a, l, k]) => `<button type="button" data-act="${a}" title="${l} (${k})">${ICON[a]}<span>${l}</span></button>`).join('');
-  $('reading').innerHTML = `<h1>${esc(m.subject)}</h1>
+  $('reading').innerHTML = `<div class="r-banner" style="--c:${m.av}" aria-hidden="true"></div>
     <div class="who"><span class="avatar lg" style="background:${m.av}" aria-hidden="true">${esc(initials(m.from))}</span>
       <div class="who-text"><div class="name">${m.sent ? 'À : ' : ''}${esc(m.from)}${m.addr ? ` <span class="addr">&lt;${esc(m.addr)}&gt;</span>` : ''}</div><div class="meta">${m.sent ? 'Envoyé depuis' : 'À'} : ${esc((acct(m.acct) || {}).name || 'moi')}</div></div><div class="when">${esc(m.time)}</div><div class="quick"><button type="button" data-act="reply" aria-label="Répondre" title="Répondre (R)">${ICON.reply}</button></div></div>
+    <h1>${esc(m.subject)}</h1>
     ${m.atts && m.atts.length ? '<div class="att-bar">' + m.atts.map((a) => `<button type="button" class="att" data-att="${a.index}" title="Enregistrer dans Téléchargements">${ICON.clip}<span class="att-name">${esc(a.filename)}</span><span class="att-size">${fmtSize(a.size)}</span></button>`).join('') + '</div>' : ''}
     ${m.body == null ? '<p class="body">Chargement…</p>'
       : m.html ? (m.remote && !m.showImages ? '<div class="img-bar"><span>Images distantes bloquées (protection contre le pistage).</span><button type="button" data-act="images">Afficher les images</button></div>' : '') + '<div class="html-slot" id="html-slot"></div>'
@@ -492,8 +496,8 @@ $('btn-theme').addEventListener('click', () => {
 (async () => {
   try {
     const info = await window.__TAURI__.core.invoke('app_info');
-    $('app-version').textContent = `${info.name} ${info.version}`;
-  } catch (_) { $('app-version').textContent = 'SXM Mail (aperçu web)'; }
+    $('app-version').textContent = `v${info.version}`;
+  } catch (_) { $('app-version').textContent = 'Aperçu web'; }
 })();
 
 renderAccounts();
