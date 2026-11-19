@@ -49,14 +49,19 @@
 
   async function check(manual) {
     if (!T || !T.core) { if (manual) toast('Disponible dans l’application installée'); return; }
-    const btn = $('btn-check-update'); btn.classList.add('spin');
+    const btns = [$('btn-check-update'), $('btn-updates')]; btns.forEach((b) => b.classList.add('spin'));
+    if (manual) toast('Recherche des mises à jour…');
     try {
       info = await T.core.invoke('check_update');
+      document.querySelector('#btn-updates .upd-dot').hidden = !info;
       if (info) { setState(''); render(); }
-      else if (manual) toast('Tu as déjà la dernière version 👍');
+      else if (manual) {
+        let v = ''; try { v = (await T.core.invoke('app_info')).version; } catch (_) {}
+        toast(`Tu as déjà la dernière version${v ? ' (' + v + ')' : ''} 👍`);
+      }
     } catch (e) {
       if (manual) showInfo('Vérification des mises à jour impossible', String(e));
-    } finally { btn.classList.remove('spin'); }
+    } finally { btns.forEach((b) => b.classList.remove('spin')); }
   }
 
   if (T && T.event) {
@@ -76,6 +81,8 @@
   $('upd-close').onclick = () => { if (!busy) $('upd').hidden = true; };
   $('upd-restart').onclick = () => T.core.invoke('restart_app');
   $('btn-check-update').onclick = () => check(true);
+  // Barre du haut : réaffiche la fenêtre si une mise à jour est déjà connue, sinon vérifie.
+  $('btn-updates').onclick = () => { if (info && !busy) { $('upd').hidden = false; } else if (!busy) check(true); };
 
   $('upd-go').onclick = async () => {
     if (busy || !info) return;

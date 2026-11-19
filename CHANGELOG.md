@@ -1,5 +1,11 @@
 # Journal des versions de SXM Mail
 
+## 0.3.1 (2026-11-19)
+
+### Nouveautés
+- Pièces jointes à l'envoi (Nouveau courrier et Répondre) : bouton « Joindre un fichier » ou glisser-déposer sur la fenêtre, jusqu'à 25 Mo au total (limite de Gmail).
+- Bouton « Rechercher des mises à jour » dans la barre du haut, avec une pastille quand une nouvelle version est disponible.
+
 ## 0.3.0 (2026-11-19)
 
 ### Nouveautés

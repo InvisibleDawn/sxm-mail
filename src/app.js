@@ -515,15 +515,66 @@ function confirmBox(title, text, yes) {
   });
 }
 
-// Rédaction et envoi (SMTP via le backend)
+// Rédaction et envoi (SMTP via le backend), avec pièces jointes.
+const MAX_ATTACH = 25 * 1024 * 1024; // limite de Gmail
+let outgoing = []; // [{ name, size, data (base64) } | { name, path }]
+
+function renderOutgoing() {
+  const total = outgoing.reduce((n, a) => n + (a.size || 0), 0);
+  $('c-atts').innerHTML = outgoing.map((a, i) => `<span class="c-att" style="--c:${colorOf(a.name)}">${ICON.clip}<span class="att-name">${esc(a.name)}</span>${a.size != null ? `<span class="att-size">${fmtSize(a.size)}</span>` : ''}<button type="button" class="c-att-x" data-unattach="${i}" aria-label="Retirer ${esc(a.name)}" title="Retirer">×</button></span>`).join('')
+    + (outgoing.length > 1 ? `<span class="c-att-total">${outgoing.length} fichiers${total ? ' · ' + fmtSize(total) : ''}</span>` : '');
+}
+
+function toBase64(buf) {
+  const bytes = new Uint8Array(buf); let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+async function addFiles(files) {
+  let total = outgoing.reduce((n, a) => n + (a.size || 0), 0);
+  for (const f of files) {
+    if (total + f.size > MAX_ATTACH) { showInfo('Pièce jointe trop lourde', `« ${f.name} » dépasse la limite de 25 Mo au total (limite de Gmail). Pour un gros fichier, partage plutôt un lien (Proton Drive, Google Drive…).`); break; }
+    try { outgoing.push({ name: f.name, size: f.size, data: toBase64(await f.arrayBuffer()) }); total += f.size; }
+    catch (e) { showInfo('Fichier illisible', f.name + '\n' + e); }
+  }
+  renderOutgoing();
+}
+
+$('c-attach').addEventListener('click', () => $('c-file').click());
+$('c-file').addEventListener('change', (e) => { addFiles([...e.target.files]); e.target.value = ''; });
+$('c-atts').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-unattach]'); if (!b) return;
+  outgoing.splice(Number(b.dataset.unattach), 1); renderOutgoing();
+});
+// Glisser-déposer : dans l'application, la fenêtre reçoit les chemins des fichiers.
+if (hasBackend && window.__TAURI__.event) {
+  const ev = window.__TAURI__.event;
+  ev.listen('tauri://drag-enter', () => { if ($('compose').open) $('drop-hint').hidden = false; });
+  ev.listen('tauri://drag-leave', () => { $('drop-hint').hidden = true; });
+  ev.listen('tauri://drag-drop', ({ payload }) => {
+    $('drop-hint').hidden = true;
+    if (!$('compose').open || !payload || !payload.paths) return;
+    payload.paths.forEach((p) => outgoing.push({ name: p.split(/[\\/]/).pop(), path: p }));
+    renderOutgoing();
+  });
+} else {
+  // Aperçu dans un navigateur : glisser-déposer classique.
+  $('compose').addEventListener('dragover', (e) => { e.preventDefault(); $('drop-hint').hidden = false; });
+  $('compose').addEventListener('dragleave', () => { $('drop-hint').hidden = true; });
+  $('compose').addEventListener('drop', (e) => { e.preventDefault(); $('drop-hint').hidden = true; addFiles([...e.dataTransfer.files]); });
+}
+
 function openCompose(reply) {
   const accts = realMode ? ACCOUNTS : [];
   $('c-from').innerHTML = accts.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('') || '<option value="">(aucun compte connecté)</option>';
   if (reply && reply.acct) $('c-from').value = reply.acct;
+  $('compose-title').textContent = reply ? 'Répondre' : 'Nouveau message';
   $('c-to').value = reply ? (reply.addr || '') : '';
   $('c-subj').value = reply ? (/^re:/i.test(reply.subject) ? reply.subject : 'Re: ' + reply.subject) : '';
   const quoted = reply && reply.body ? '\n\n' + reply.from + ' a écrit :\n' + reply.body.split('\n').map((l) => '> ' + l).join('\n') : '';
   $('c-body').value = quoted;
+  outgoing = []; renderOutgoing(); $('drop-hint').hidden = true;
   $('compose').showModal();
   (reply ? $('c-body') : $('c-to')).focus();
   if (reply) $('c-body').setSelectionRange(0, 0);
@@ -531,10 +582,13 @@ function openCompose(reply) {
 $('btn-compose').addEventListener('click', () => openCompose());
 $('c-send').addEventListener('click', async () => {
   if (!hasBackend || !realMode || !$('c-from').value) { $('compose').close(); toast('Connecte d’abord un compte pour envoyer'); return; }
-  $('c-send').disabled = true; $('c-send').textContent = 'Envoi…';
+  $('c-send').disabled = true; $('c-send').textContent = outgoing.length ? 'Envoi des pièces jointes…' : 'Envoi…';
   try {
-    await invoke('send_mail', { accountId: $('c-from').value, to: $('c-to').value, subject: $('c-subj').value, body: $('c-body').value });
-    $('compose').close(); toast('Message envoyé'); st.loaded.sent = false;
+    await invoke('send_mail', { accountId: $('c-from').value, to: $('c-to').value, subject: $('c-subj').value, body: $('c-body').value,
+      attachments: outgoing.map((a) => (a.path ? { name: a.name, path: a.path } : { name: a.name, data: a.data })) });
+    const n = outgoing.length;
+    outgoing = []; renderOutgoing();
+    $('compose').close(); toast(n ? `Message envoyé avec ${n} pièce${n > 1 ? 's' : ''} jointe${n > 1 ? 's' : ''}` : 'Message envoyé'); st.loaded.sent = false;
   } catch (e) { showInfo('Envoi impossible', String(e)); }
   finally { $('c-send').disabled = false; $('c-send').textContent = 'Envoyer'; }
 });

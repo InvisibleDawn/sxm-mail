@@ -198,13 +198,20 @@ async fn fetch_message(account_id: String, mailbox: String, uid: u32, cache: Sta
 }
 
 #[tauri::command]
-async fn send_mail(account_id: String, to: String, subject: String, body: String, cache: State<'_, Cache>) -> CmdResult<()> {
+async fn send_mail(
+    account_id: String,
+    to: String,
+    subject: String,
+    body: String,
+    attachments: Option<Vec<sxm_core::OutgoingAttachment>>,
+    cache: State<'_, Cache>,
+) -> CmdResult<()> {
     let cache = cache.inner().clone();
     spawn_blocking(move || {
         let cfg = store::load_config()?;
         let account = store::get_account(&account_id)?;
         let token = cache.access_token(&cfg, &account)?;
-        sxm_core::send_mail(&account.provider, &account.email, &token, &to, &subject, &body)
+        sxm_core::send_mail(&account.provider, &account.email, &token, &to, &subject, &body, &attachments.unwrap_or_default())
     })
     .await
     .map_err(join_err)?
