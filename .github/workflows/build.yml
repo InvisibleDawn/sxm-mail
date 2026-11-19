@@ -17,7 +17,9 @@ permissions:
 jobs:
   macos:
     name: macOS (.dmg universel)
-    runs-on: macos-latest
+    # Mac Intel de GitHub (les Mac Apple Silicon sont souvent saturés) ; le binaire reste universel.
+    # macos-15-intel est disponible jusqu'en août 2027 : repasser à macos-latest d'ici là.
+    runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
