@@ -17,7 +17,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Binaire « universel » : fonctionne sur les Mac Intel (ex. MacBook Pro 2019) et Apple Silicon.
       - uses: dtolnay/rust-toolchain@stable
@@ -37,7 +37,7 @@ jobs:
       - name: Compilation de l'application
         run: cargo tauri build --target universal-apple-darwin --bundles app,dmg
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: SXM-Mail-macOS
           path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
@@ -49,7 +49,7 @@ jobs:
         run: echo "version=$(python3 -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")" >> "$GITHUB_OUTPUT"
 
       - name: Publication sur la page Releases
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.v.outputs.version }}
           name: SXM Mail ${{ steps.v.outputs.version }}
