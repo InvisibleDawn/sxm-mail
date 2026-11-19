@@ -70,48 +70,243 @@ pub fn fetch_inbox(host: &str, account_id: &str, email: &str, access_token: &str
     out
 }
 
-/// Les `limit` derniers messages envoyés. Le dossier est trouvé par son attribut \Sent
-/// (son nom dépend de la langue du compte Gmail : « Sent Mail », « Messages envoyés »…).
-pub fn fetch_sent(host: &str, account_id: &str, email: &str, access_token: &str, limit: u32) -> Result<Vec<MessageSummary>> {
+/// Un dossier du compte : boîte de réception, dossiers spéciaux de Gmail ou dossier personnel (libellé).
+#[derive(Debug, Clone, Serialize)]
+pub struct FolderInfo {
+    /// "inbox" | "sent" | "drafts" | "junk" | "trash" | "all" | "user"
+    pub kind: String,
+    /// Nom IMAP exact (encodé en UTF-7 modifié), à renvoyer tel quel au serveur.
+    pub name: String,
+    /// Nom lisible (décodé) : « Marie », « Clients/Hôtel »…
+    pub label: String,
+}
+
+/// Rôle d'un dossier d'après ses attributs (RFC 6154), sinon "user".
+fn folder_kind(n: &imap::types::Name) -> Option<&'static str> {
+    if n.name().eq_ignore_ascii_case("INBOX") {
+        return Some("inbox");
+    }
+    if n.attributes().iter().any(|a| matches!(a, imap::types::NameAttribute::NoSelect)) {
+        return None;
+    }
+    for a in n.attributes() {
+        if let imap::types::NameAttribute::Custom(s) = a {
+            let s = s.to_ascii_lowercase();
+            let k = match s.as_str() {
+                "\\sent" => "sent",
+                "\\drafts" => "drafts",
+                "\\junk" => "junk",
+                "\\trash" => "trash",
+                "\\all" => "all",
+                // Dossiers virtuels de Gmail (Important, Suivis) : déjà couverts par SXM Mail.
+                "\\important" | "\\flagged" => return None,
+                _ => continue,
+            };
+            return Some(k);
+        }
+    }
+    // Les autres dossiers internes de Gmail ([Gmail]/…) ne sont pas des dossiers personnels.
+    if n.name().starts_with("[Gmail]") || n.name().starts_with("[Google Mail]") {
+        return None;
+    }
+    Some("user")
+}
+
+fn all_folders(session: &mut Session) -> Result<Vec<FolderInfo>> {
+    let names = session.list(None, Some("*")).context("liste des dossiers")?;
+    let mut out: Vec<FolderInfo> = names
+        .iter()
+        .filter_map(|n| {
+            folder_kind(n).map(|k| FolderInfo { kind: k.into(), name: n.name().to_string(), label: decode_utf7_imap(n.name()) })
+        })
+        .collect();
+    out.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    Ok(out)
+}
+
+/// Tous les dossiers utiles du compte (spéciaux et personnels).
+pub fn list_folders(host: &str, email: &str, access_token: &str) -> Result<Vec<FolderInfo>> {
     let mut session = open_session(host, email, access_token)?;
-    let name = special_folder(&mut session, "\\Sent", &["[Gmail]/Sent Mail", "[Gmail]/Messages envoyés"])?;
-    let out = match name {
-        Some(n) => fetch_mailbox(&mut session, account_id, &n, limit, true),
-        None => Err(anyhow!("dossier des messages envoyés introuvable")),
-    };
+    let out = all_folders(&mut session);
     let _ = session.logout();
     out
 }
 
-/// Dossier repéré par son attribut spécial (\\Sent, \\Trash, \\All…) : son nom dépend de la langue du compte.
-fn special_folder(session: &mut Session, attr: &str, fallbacks: &[&str]) -> Result<Option<String>> {
-    let names = session.list(None, Some("*")).context("liste des dossiers")?;
-    let by_attr = names
-        .iter()
-        .find(|n| n.attributes().iter().any(|a| matches!(a, imap::types::NameAttribute::Custom(s) if s.eq_ignore_ascii_case(attr))));
-    Ok(by_attr
-        .or_else(|| names.iter().find(|n| fallbacks.iter().any(|f| n.name().eq_ignore_ascii_case(f))))
-        .map(|n| n.name().to_string()))
+/// Nom IMAP du dossier ayant ce rôle ("sent", "junk", "trash", "all", "drafts").
+fn folder_by_kind(session: &mut Session, kind: &str) -> Result<String> {
+    if kind == "inbox" {
+        return Ok("INBOX".into());
+    }
+    all_folders(session)?
+        .into_iter()
+        .find(|f| f.kind == kind)
+        .map(|f| f.name)
+        .ok_or_else(|| anyhow!("{} introuvable dans ce compte", kind_label(kind)))
 }
 
-/// Actions synchronisées avec Gmail : "delete" (corbeille), "archive" (retire de la boîte de réception), "star", "unstar".
-pub fn message_action(host: &str, email: &str, access_token: &str, mailbox: &str, uid: u32, action: &str) -> Result<()> {
+fn kind_label(kind: &str) -> &'static str {
+    match kind {
+        "sent" => "le dossier des messages envoyés",
+        "junk" => "le dossier Courrier indésirable",
+        "trash" => "la corbeille",
+        "all" | "archive" => "le dossier « Tous les messages »",
+        "drafts" => "le dossier Brouillons",
+        _ => "le dossier",
+    }
+}
+
+/// Recherche Gmail des archives : les messages sortis de la boîte de réception.
+const ARCHIVE_QUERY: &str = "X-GM-RAW \"-in:inbox -in:sent -in:drafts -in:chats\"";
+
+/// Une page de messages d'un dossier.
+#[derive(Debug, Clone, Serialize)]
+pub struct FolderPage {
+    pub mailbox: String,
+    pub messages: Vec<MessageSummary>,
+}
+
+/// Messages d'un dossier, du plus récent au plus ancien.
+/// - `kind` : "inbox", "sent", "junk", "trash", "archive" ou "user" (alors `name` = nom IMAP exact) ;
+/// - `before_uid` : pour « Charger les mails plus anciens ».
+pub fn fetch_folder(
+    host: &str,
+    account_id: &str,
+    email: &str,
+    access_token: &str,
+    kind: &str,
+    name: Option<&str>,
+    limit: u32,
+    before_uid: Option<u32>,
+) -> Result<FolderPage> {
     let mut session = open_session(host, email, access_token)?;
     let result = (|| {
-        let target = match action {
-            "delete" => Some(special_folder(&mut session, "\\Trash", &["[Gmail]/Trash", "[Gmail]/Corbeille"])?.ok_or_else(|| anyhow!("corbeille introuvable"))?),
-            "archive" => Some(
-                special_folder(&mut session, "\\All", &["[Gmail]/All Mail", "[Gmail]/Tous les messages"])?.ok_or_else(|| anyhow!("dossier « Tous les messages » introuvable"))?,
-            ),
-            "star" | "unstar" => None,
-            other => bail!("action inconnue : {other}"),
+        let mailbox = match (kind, name) {
+            ("user", Some(n)) => n.to_string(),
+            ("user", None) => bail!("nom de dossier manquant"),
+            ("archive", _) => folder_by_kind(&mut session, "all")?,
+            (k, _) => folder_by_kind(&mut session, k)?,
         };
-        session.select(mailbox).with_context(|| format!("ouverture du dossier {mailbox}"))?;
-        match (action, target) {
-            ("star", _) => session.uid_store(uid.to_string(), "+FLAGS (\\Flagged)").map(|_| ())?,
-            ("unstar", _) => session.uid_store(uid.to_string(), "-FLAGS (\\Flagged)").map(|_| ())?,
-            (_, Some(t)) => session.uid_mv(uid.to_string(), &t).context("déplacement du message")?,
-            _ => {}
+        let sent = kind == "sent";
+        let messages = if kind == "archive" || before_uid.is_some() {
+            if before_uid.is_some_and(|b| b <= 1) {
+                return Ok(FolderPage { mailbox, messages: vec![] });
+            }
+            session.examine(&mailbox).with_context(|| format!("ouverture du dossier {}", decode_utf7_imap(&mailbox)))?;
+            let mut query = match before_uid {
+                Some(b) => format!("UID 1:{}", b - 1),
+                None => "ALL".to_string(),
+            };
+            if kind == "archive" {
+                query = format!("{query} {ARCHIVE_QUERY}");
+            }
+            let mut uids: Vec<u32> = session.uid_search(&query).context("recherche des messages")?.into_iter().filter(|u| before_uid.map_or(true, |b| *u < b)).collect();
+            uids.sort_unstable();
+            let page: Vec<String> = uids.iter().rev().take(limit as usize).map(|u| u.to_string()).collect();
+            if page.is_empty() {
+                vec![]
+            } else {
+                let fetched = session.uid_fetch(page.join(","), "(UID FLAGS BODY.PEEK[HEADER])").context("lecture des en-têtes")?;
+                summaries(&fetched, account_id, &mailbox, sent)
+            }
+        } else {
+            fetch_mailbox(&mut session, account_id, &mailbox, limit, sent)?
+        };
+        Ok(FolderPage { mailbox, messages })
+    })();
+    let _ = session.logout();
+    result
+}
+
+/// Crée un dossier personnel (un libellé dans Gmail) ; renvoie son nom IMAP. Ne fait rien s'il existe déjà.
+pub fn create_folder(host: &str, email: &str, access_token: &str, label: &str) -> Result<String> {
+    let label = clean_folder_label(label)?;
+    let mut session = open_session(host, email, access_token)?;
+    let result = (|| {
+        if let Some(f) = all_folders(&mut session)?.into_iter().find(|f| f.label.eq_ignore_ascii_case(&label)) {
+            return Ok(f.name);
+        }
+        let raw = encode_utf7_imap(&label);
+        session.create(&raw).with_context(|| format!("création du dossier « {label} »"))?;
+        Ok(raw)
+    })();
+    let _ = session.logout();
+    result
+}
+
+fn clean_folder_label(label: &str) -> Result<String> {
+    let l: String = label.chars().filter(|c| !c.is_control()).collect::<String>().trim().trim_matches('/').to_string();
+    if l.is_empty() {
+        bail!("donne un nom au dossier");
+    }
+    if l.chars().count() > 100 {
+        bail!("nom de dossier trop long (100 caractères au maximum)");
+    }
+    if l.eq_ignore_ascii_case("inbox") || l.starts_with("[Gmail]") || l.starts_with("[Google Mail]") {
+        bail!("ce nom est réservé par Gmail");
+    }
+    Ok(l)
+}
+
+/// Déplace un message vers un dossier : `target` = rôle ("inbox", "junk", "trash", "archive")
+/// ou "user" avec `target_name` = nom IMAP exact.
+pub fn move_message(
+    host: &str,
+    email: &str,
+    access_token: &str,
+    mailbox: &str,
+    uid: u32,
+    target: &str,
+    target_name: Option<&str>,
+) -> Result<String> {
+    let mut session = open_session(host, email, access_token)?;
+    let result = (|| {
+        let dest = match (target, target_name) {
+            ("user", Some(n)) => n.to_string(),
+            ("user", None) => bail!("dossier de destination manquant"),
+            ("archive", _) => folder_by_kind(&mut session, "all")?,
+            (k, _) => folder_by_kind(&mut session, k)?,
+        };
+        if dest == mailbox {
+            return Ok(dest);
+        }
+        session.select(mailbox).with_context(|| format!("ouverture du dossier {}", decode_utf7_imap(mailbox)))?;
+        session.uid_mv(uid.to_string(), &dest).context("déplacement du message")?;
+        Ok(dest)
+    })();
+    let _ = session.logout();
+    result
+}
+
+/// Actions synchronisées avec Gmail : "delete" (corbeille), "purge" (suppression définitive, depuis la corbeille
+/// ou les indésirables), "archive" (retire de la boîte de réception), "star", "unstar", "read", "unread".
+pub fn message_action(host: &str, email: &str, access_token: &str, mailbox: &str, uid: u32, action: &str) -> Result<()> {
+    match action {
+        "delete" => return move_message(host, email, access_token, mailbox, uid, "trash", None).map(|_| ()),
+        "archive" => return move_message(host, email, access_token, mailbox, uid, "archive", None).map(|_| ()),
+        _ => {}
+    }
+    let flags = match action {
+        "star" => "+FLAGS (\\Flagged)",
+        "unstar" => "-FLAGS (\\Flagged)",
+        "read" => "+FLAGS (\\Seen)",
+        "unread" => "-FLAGS (\\Seen)",
+        "purge" => "+FLAGS (\\Deleted)",
+        other => bail!("action inconnue : {other}"),
+    };
+    let mut session = open_session(host, email, access_token)?;
+    let result = (|| {
+        if action == "purge" {
+            // Par sécurité, la suppression définitive n'est permise que depuis la corbeille ou les indésirables.
+            let trash = folder_by_kind(&mut session, "trash").ok();
+            let junk = folder_by_kind(&mut session, "junk").ok();
+            if Some(mailbox) != trash.as_deref() && Some(mailbox) != junk.as_deref() {
+                bail!("suppression définitive possible seulement depuis la corbeille ou le courrier indésirable");
+            }
+        }
+        session.select(mailbox).with_context(|| format!("ouverture du dossier {}", decode_utf7_imap(mailbox)))?;
+        session.uid_store(uid.to_string(), flags).context("mise à jour du message")?;
+        if action == "purge" {
+            session.uid_expunge(uid.to_string()).context("suppression définitive")?;
         }
         Ok(())
     })();
@@ -129,36 +324,6 @@ fn fetch_mailbox(session: &mut Session, account_id: &str, mailbox_name: &str, li
         .fetch(format!("{start}:{}", mailbox.exists), "(UID FLAGS BODY.PEEK[HEADER])")
         .context("lecture des en-têtes")?;
     Ok(summaries(&fetched, account_id, mailbox_name, sent))
-}
-
-/// Les `limit` messages précédant `before_uid` dans un dossier (pour « Charger plus »).
-pub fn fetch_older(
-    host: &str,
-    account_id: &str,
-    email: &str,
-    access_token: &str,
-    mailbox_name: &str,
-    before_uid: u32,
-    limit: usize,
-    sent: bool,
-) -> Result<Vec<MessageSummary>> {
-    if before_uid <= 1 {
-        return Ok(vec![]);
-    }
-    let mut session = open_session(host, email, access_token)?;
-    let result = (|| {
-        session.examine(mailbox_name).with_context(|| format!("ouverture du dossier {mailbox_name}"))?;
-        let mut uids: Vec<u32> = session.uid_search(format!("UID 1:{}", before_uid - 1))?.into_iter().filter(|u| *u < before_uid).collect();
-        uids.sort_unstable();
-        let older: Vec<String> = uids.iter().rev().take(limit).map(|u| u.to_string()).collect();
-        if older.is_empty() {
-            return Ok(vec![]);
-        }
-        let fetched = session.uid_fetch(older.join(","), "(UID FLAGS BODY.PEEK[HEADER])").context("lecture des en-têtes")?;
-        Ok(summaries(&fetched, account_id, mailbox_name, sent))
-    })();
-    let _ = session.logout();
-    result
 }
 
 fn summaries(fetched: &[imap::types::Fetch], account_id: &str, mailbox_name: &str, sent: bool) -> Vec<MessageSummary> {
@@ -459,6 +624,71 @@ fn strip_html(html: &str) -> String {
     result.trim().to_string()
 }
 
+/// Décode un nom de dossier IMAP (UTF-7 modifié, RFC 3501 §5.1.3) : « Messages envoy&AOk-s » → « Messages envoyés ».
+pub fn decode_utf7_imap(s: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + 1..];
+        let Some(j) = after.find('-') else {
+            out.push_str(&rest[i..]);
+            return out;
+        };
+        let chunk = &after[..j];
+        if chunk.is_empty() {
+            out.push('&');
+        } else {
+            let b64 = chunk.replace(',', "/");
+            match base64::engine::general_purpose::STANDARD_NO_PAD.decode(b64.trim_end_matches('=')) {
+                Ok(bytes) => {
+                    let units: Vec<u16> = bytes.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
+                    out.push_str(&String::from_utf16_lossy(&units));
+                }
+                Err(_) => {
+                    out.push('&');
+                    out.push_str(chunk);
+                    out.push('-');
+                }
+            }
+        }
+        rest = &after[j + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Encode un nom de dossier en UTF-7 modifié pour le serveur IMAP.
+pub fn encode_utf7_imap(s: &str) -> String {
+    let mut out = String::new();
+    let mut pending: Vec<u16> = Vec::new();
+    let flush = |pending: &mut Vec<u16>, out: &mut String| {
+        if pending.is_empty() {
+            return;
+        }
+        let bytes: Vec<u8> = pending.iter().flat_map(|u| u.to_be_bytes()).collect();
+        out.push('&');
+        out.push_str(&base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes).replace('/', ","));
+        out.push('-');
+        pending.clear();
+    };
+    for c in s.chars() {
+        if (' '..='~').contains(&c) {
+            flush(&mut pending, &mut out);
+            if c == '&' {
+                out.push_str("&-");
+            } else {
+                out.push(c);
+            }
+        } else {
+            let mut buf = [0u16; 2];
+            pending.extend_from_slice(c.encode_utf16(&mut buf));
+        }
+    }
+    flush(&mut pending, &mut out);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -517,6 +747,25 @@ mod tests {
         assert!(html.contains("src=\"data:image/png;base64,iVBORw0KGgo="));
         assert!(b.has_remote_images);
         assert!(b.text.contains("Bonjour"));
+    }
+
+    #[test]
+    fn noms_de_dossiers_utf7() {
+        assert_eq!(decode_utf7_imap("[Gmail]/Messages envoy&AOk-s"), "[Gmail]/Messages envoyés");
+        assert_eq!(decode_utf7_imap("Tom &- Jerry"), "Tom & Jerry");
+        for name in ["Élodie", "Clients/Hôtel Été", "Tom & Jerry", "日本語", "Café ☕ 🎉", "Marie"] {
+            assert_eq!(decode_utf7_imap(&encode_utf7_imap(name)), name);
+        }
+        assert_eq!(encode_utf7_imap("Élodie"), "&AMk-lodie");
+        assert_eq!(encode_utf7_imap("Marie"), "Marie");
+    }
+
+    #[test]
+    fn nom_de_dossier_controle() {
+        assert_eq!(clean_folder_label("  /Marie/ ").unwrap(), "Marie");
+        assert!(clean_folder_label("   ").is_err());
+        assert!(clean_folder_label("INBOX").is_err());
+        assert!(clean_folder_label("[Gmail]/Spam").is_err());
     }
 
     #[test]

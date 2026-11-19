@@ -1,14 +1,19 @@
 //! Cœur de SXM Mail, indépendant de l'interface.
 //! - `store`   : configuration, liste des comptes, refresh tokens (trousseau système)
 //! - `oauth`   : OAuth2 Google et Microsoft (PKCE, redirection locale), rafraîchissement
-//! - `imap_client` : lecture de l'Inbox via IMAP + XOAUTH2
+//! - `imap_client` : dossiers et messages via IMAP + XOAUTH2
+//! - `update`  : mises à jour depuis la page Releases de GitHub
 
 pub mod imap_client;
 pub mod oauth;
 pub mod smtp_client;
 pub mod store;
+pub mod update;
 
-pub use imap_client::{fetch_inbox, fetch_message, fetch_older, fetch_sent, imap_host, message_action, save_attachment, MessageBody, MessageSummary};
+pub use imap_client::{
+    create_folder, fetch_folder, fetch_inbox, fetch_message, imap_host, list_folders, message_action, move_message, save_attachment, FolderInfo, FolderPage,
+    MessageBody, MessageSummary,
+};
 pub use smtp_client::send_mail;
 pub use store::{Account, Config};
 

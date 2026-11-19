@@ -27,14 +27,23 @@ sudo dnf install ./src-tauri/target/release/bundle/rpm/*.rpm
 
 La première compilation est longue (plusieurs minutes), les suivantes sont rapides.
 
-## Version macOS (compilée par GitHub)
+## Versions compilées par GitHub (macOS et Fedora)
 
-Le dépôt contient `.github/workflows/macos.yml` : GitHub compile l'application sur ses propres Mac.
-1. Onglet **Actions** du dépôt → **Build macOS** → **Run workflow**.
-2. À la fin (≈ 15 à 25 min la première fois), ouvre l'exécution → section **Artifacts** → télécharge **SXM-Mail-macOS** (un zip contenant le `.dmg`).
-3. Sur le Mac : ouvre le `.dmg`, glisse SXM Mail dans Applications.
-4. Premier lancement : l'app n'est pas signée par Apple → **Réglages Système → Confidentialité et sécurité → Ouvrir quand même**.
-5. Le fichier `config.json` va dans `~/Library/Application Support/sxm-mail/config.json` (même contenu que sous Linux). Le jeton est rangé dans le Trousseau d'accès.
+Le fichier `.github/workflows/build.yml` compile SXM Mail sur les machines de GitHub à chaque envoi sur `main`
+(ou onglet **Actions** → **Compilation SXM Mail** → **Run workflow**), puis publie sur la page **Releases** :
+- `SXM.Mail_<version>_universal.dmg` pour macOS ;
+- `SXM.Mail-<version>-1.x86_64.rpm` pour Fedora.
+
+Les notes de version viennent de `CHANGELOG.md` (section `## <version>`). Pour publier une nouvelle version :
+monter le numéro dans `src-tauri/tauri.conf.json` et `src-tauri/Cargo.toml`, ajouter sa section au journal, envoyer sur `main`.
+
+**Mises à jour intégrées** : l'application vérifie la page Releases au lancement puis toutes les 6 heures
+(et via « Rechercher des mises à jour » en bas du volet de gauche). Le fichier est vérifié en SHA256, puis :
+- Fedora : `pkexec dnf install` (le mot de passe est demandé) ;
+- macOS : l'application est remplacée par celle du `.dmg`, puis redémarrée.
+
+Mac, premier lancement : l'app n'est pas signée par Apple → **Réglages Système → Confidentialité et sécurité → Ouvrir quand même**.
+Le fichier `config.json` va dans `~/Library/Application Support/sxm-mail/config.json` (même contenu que sous Linux). Le jeton est rangé dans le Trousseau d'accès.
 
 Le binaire est « universel » : il fonctionne sur les Mac Intel et Apple Silicon.
 

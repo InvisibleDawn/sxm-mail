@@ -1,0 +1,106 @@
+# Compile SXM Mail sur les machines de GitHub et publie les fichiers sur la page Releases :
+# - macOS : .dmg universel (Mac Intel et Apple Silicon) ;
+# - Fedora : .rpm (x86_64).
+# Les applications installées se mettent à jour d'elles-mêmes à partir de cette page.
+# Lancement : automatique à chaque envoi sur main (ou étiquette v0.x.y), ou onglet « Actions » → « Run workflow ».
+name: Compilation SXM Mail
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: macOS (.dmg universel)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Outil de build Tauri
+        run: cargo install tauri-cli --version "^2" --locked
+      - name: Tests du cœur
+        run: cargo test --manifest-path core/Cargo.toml
+      - name: Compilation de l'application
+        working-directory: src-tauri
+        run: cargo tauri build --target universal-apple-darwin --bundles app,dmg
+      - uses: actions/upload-artifact@v7
+        with:
+          name: SXM-Mail-macOS
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  fedora:
+    name: Fedora (.rpm)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Bibliothèques système
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev libdbus-1-dev libssl-dev pkg-config rpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Outil de build Tauri
+        run: cargo install tauri-cli --version "^2" --locked
+      - name: Tests du cœur
+        run: cargo test --manifest-path core/Cargo.toml
+      - name: Compilation de l'application
+        working-directory: src-tauri
+        run: cargo tauri build --bundles rpm
+      - uses: actions/upload-artifact@v7
+        with:
+          name: SXM-Mail-Fedora
+          path: src-tauri/target/release/bundle/rpm/*.rpm
+          if-no-files-found: error
+
+  release:
+    name: Publication sur la page Releases
+    needs: [macos, fedora]
+    # Publie ce qui est prêt, même si une plateforme a échoué (ex. aucun Mac disponible chez GitHub).
+    if: always() && (needs.macos.result == 'success' || needs.fedora.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - id: v
+        run: echo "version=$(jq -r .version src-tauri/tauri.conf.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -la dist
+      - name: Notes de version depuis CHANGELOG.md
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          awk -v v="$v" '$0 ~ "^## "v"( |$)" {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md
+          {
+            echo
+            echo "---"
+            echo "**macOS** (Intel et Apple Silicon) : \`SXM.Mail_${v}_universal.dmg\` — non signée par Apple : au premier lancement, Réglages Système → Confidentialité et sécurité → Ouvrir quand même."
+            echo "**Fedora** : \`SXM.Mail-${v}-1.x86_64.rpm\` — \`sudo dnf install ./SXM.Mail-${v}-1.x86_64.rpm\`"
+            echo
+            echo "Les versions déjà installées proposent la mise à jour d'elles-mêmes."
+          } >> notes.md
+          cat notes.md
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ steps.v.outputs.version }}
+          name: SXM Mail ${{ steps.v.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body_path: notes.md
+          files: dist/*
+          fail_on_unmatched_files: true
