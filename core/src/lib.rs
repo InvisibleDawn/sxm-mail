@@ -14,7 +14,7 @@ pub use imap_client::{
     create_folder, fetch_folder, fetch_inbox, fetch_message, imap_host, list_folders, message_action, move_message, save_attachment, FolderInfo, FolderPage,
     MessageBody, MessageSummary,
 };
-pub use smtp_client::{send_mail, OutgoingAttachment};
+pub use smtp_client::{send_mail, send_mail_rich, InlineImage, OutgoingAttachment};
 pub use store::{Account, Config};
 
 /// Ouvre un lien d'un mail dans le navigateur par défaut (http/https uniquement, sans passer par un shell).

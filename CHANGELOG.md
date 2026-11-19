@@ -1,5 +1,11 @@
 # Journal des versions de SXM Mail
 
+## 0.3.2 (2026-11-19)
+
+### Nouveautés
+- Images dans le texte du message : colle une image ou une capture d'écran (Ctrl+V / ⌘V) directement dans le mail, ou utilise le bouton « Image ». Elle s'affiche dans le corps du mail chez le destinataire.
+- Texte brut partout : un texte collé dans un message (depuis Word, une page web, un autre mail) arrive sans police, taille ni couleur, et ce que tu copies depuis un mail reçu part aussi en texte brut.
+
 ## 0.3.1 (2026-11-19)
 
 ### Nouveautés

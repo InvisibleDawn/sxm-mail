@@ -258,6 +258,7 @@ function mountHtml(m) {
     const d = f.contentDocument; if (!d) return;
     // Survol d'un lien : affiche sa vraie destination (protection contre l'hameçonnage).
     d.querySelectorAll('a[href]').forEach((a) => { a.title = a.getAttribute('href'); });
+    d.addEventListener('copy', plainCopy(d));
     d.addEventListener('click', (e) => {
       const a = e.target.closest && e.target.closest('a[href]'); if (!a) return;
       e.preventDefault();
@@ -270,6 +271,16 @@ function mountHtml(m) {
   });
   $('html-slot').appendChild(f);
 }
+
+// Copier depuis un mail reçu : seul le texte brut part dans le presse-papiers (ni police, ni couleur).
+function plainCopy(doc) {
+  return (e) => {
+    const t = (doc.getSelection() || '').toString();
+    if (!t || !e.clipboardData) return;
+    e.clipboardData.setData('text/plain', t); e.preventDefault();
+  };
+}
+document.addEventListener('copy', (e) => { if (!document.activeElement || !document.activeElement.closest('input,textarea,[contenteditable]')) plainCopy(document)(e); });
 
 function fmtSize(n) {
   if (n < 1024) return n + ' o';
@@ -531,8 +542,10 @@ function toBase64(buf) {
   return btoa(bin);
 }
 
+const usedBytes = () => outgoing.reduce((n, a) => n + (a.size || 0), 0) + inlineBytes();
+
 async function addFiles(files) {
-  let total = outgoing.reduce((n, a) => n + (a.size || 0), 0);
+  let total = usedBytes();
   for (const f of files) {
     if (total + f.size > MAX_ATTACH) { showInfo('Pièce jointe trop lourde', `« ${f.name} » dépasse la limite de 25 Mo au total (limite de Gmail). Pour un gros fichier, partage plutôt un lien (Proton Drive, Google Drive…).`); break; }
     try { outgoing.push({ name: f.name, size: f.size, data: toBase64(await f.arrayBuffer()) }); total += f.size; }
@@ -565,6 +578,98 @@ if (hasBackend && window.__TAURI__.event) {
   $('compose').addEventListener('drop', (e) => { e.preventDefault(); $('drop-hint').hidden = true; addFiles([...e.dataTransfer.files]); });
 }
 
+// --- Éditeur du message : texte brut + images collées --------------------------------------
+// Tout texte collé ou déposé est inséré en texte brut (sans police, couleur ni mise en forme).
+// Les images collées sont envoyées dans le corps du mail (HTML + image intégrée).
+const editor = $('c-body');
+let imgSeq = 0;
+
+function inlineBytes() {
+  return [...editor.querySelectorAll('img[data-cid]')].reduce((n, i) => n + Math.floor(((i.getAttribute('src') || '').split(',')[1] || '').length * 3 / 4), 0);
+}
+
+function placeCaret(node, after) {
+  const r = document.createRange();
+  if (after) r.setStartAfter(node); else r.setStart(node, 0);
+  r.collapse(true);
+  const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+}
+
+// Insertion à l'endroit du curseur (ou à la fin si le curseur n'est pas dans le message).
+function insertNode(node) {
+  const sel = getSelection();
+  let r = sel.rangeCount ? sel.getRangeAt(0) : null;
+  if (!r || !editor.contains(r.commonAncestorContainer)) { editor.focus(); r = document.createRange(); r.selectNodeContents(editor); r.collapse(false); }
+  r.deleteContents(); r.insertNode(node); placeCaret(node, true);
+}
+
+function insertPlain(text) {
+  text = text.replace(/\r\n?/g, '\n');
+  editor.focus();
+  if (!document.execCommand('insertText', false, text)) insertNode(document.createTextNode(text));
+}
+
+const IMG_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/heic': 'heic' };
+async function insertImages(files) {
+  for (const f of files) {
+    if (!f.type.startsWith('image/')) continue;
+    if (usedBytes() + f.size > MAX_ATTACH) { showInfo('Image trop lourde', 'Les images et pièces jointes ne peuvent pas dépasser 25 Mo au total (limite de Gmail).'); break; }
+    const url = await new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = ko; fr.readAsDataURL(f); });
+    imgSeq += 1;
+    const img = document.createElement('img');
+    img.src = url;
+    img.dataset.cid = `img${imgSeq}.${Date.now().toString(36)}@sxm-mail`;
+    const base = f.name && f.name !== 'image.png' ? f.name : `image-${imgSeq}.${IMG_EXT[f.type] || 'png'}`;
+    img.dataset.name = base; img.alt = base;
+    insertNode(img);
+  }
+}
+
+editor.addEventListener('paste', (e) => {
+  e.preventDefault();
+  const cd = e.clipboardData; if (!cd) return;
+  const text = cd.getData('text/plain');
+  const images = [...cd.items].filter((i) => i.kind === 'file' && i.type.startsWith('image/')).map((i) => i.getAsFile()).filter(Boolean);
+  // Du texte copié (même depuis Word ou une page web) est collé en texte brut ; une image seule est insérée.
+  if (text) insertPlain(text);
+  else if (images.length) insertImages(images);
+});
+editor.addEventListener('drop', (e) => {
+  const dt = e.dataTransfer; if (!dt) return;
+  const images = [...dt.files].filter((f) => f.type.startsWith('image/'));
+  if (images.length) { e.preventDefault(); e.stopPropagation(); insertImages(images); return; }
+  const text = dt.getData('text/plain');
+  if (text) { e.preventDefault(); insertPlain(text); }
+});
+// Pas de gras / italique / souligné : le message reste en texte brut.
+editor.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && /^[biu]$/i.test(e.key)) e.preventDefault(); });
+$('c-insert-image').addEventListener('click', () => $('c-image').click());
+$('c-image').addEventListener('change', (e) => { insertImages([...e.target.files]); e.target.value = ''; });
+
+// Contenu de l'éditeur → texte brut, HTML (si images) et images intégrées.
+function serializeEditor() {
+  let text = '', html = ''; const images = [];
+  const isBlock = (n) => /^(DIV|P|LI|H[1-6]|BLOCKQUOTE|PRE)$/.test(n.nodeName);
+  const walk = (node) => {
+    for (const n of node.childNodes) {
+      if (n.nodeType === 3) { text += n.data; html += esc(n.data); }
+      else if (n.nodeName === 'BR') { text += '\n'; html += '<br>'; }
+      else if (n.nodeName === 'IMG' && n.dataset.cid) {
+        const name = n.dataset.name || 'image.png';
+        images.push({ cid: n.dataset.cid, name, data: (n.getAttribute('src') || '').split(',')[1] || '' });
+        text += `[Image : ${name}]`;
+        html += `<img src="cid:${esc(n.dataset.cid)}" alt="${esc(name)}" style="max-width:100%;height:auto">`;
+      } else if (n.nodeType === 1) {
+        if (isBlock(n) && text && !text.endsWith('\n')) { text += '\n'; html += '<br>'; }
+        walk(n);
+      }
+    }
+  };
+  walk(editor);
+  html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1a1d23;white-space:pre-wrap">' + html + '</div>';
+  return { text, html: images.length ? html : null, images };
+}
+
 function openCompose(reply) {
   const accts = realMode ? ACCOUNTS : [];
   $('c-from').innerHTML = accts.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('') || '<option value="">(aucun compte connecté)</option>';
@@ -573,21 +678,22 @@ function openCompose(reply) {
   $('c-to').value = reply ? (reply.addr || '') : '';
   $('c-subj').value = reply ? (/^re:/i.test(reply.subject) ? reply.subject : 'Re: ' + reply.subject) : '';
   const quoted = reply && reply.body ? '\n\n' + reply.from + ' a écrit :\n' + reply.body.split('\n').map((l) => '> ' + l).join('\n') : '';
-  $('c-body').value = quoted;
+  editor.textContent = quoted;
   outgoing = []; renderOutgoing(); $('drop-hint').hidden = true;
   $('compose').showModal();
-  (reply ? $('c-body') : $('c-to')).focus();
-  if (reply) $('c-body').setSelectionRange(0, 0);
+  if (reply) { editor.focus(); if (editor.firstChild) placeCaret(editor.firstChild, false); } else $('c-to').focus();
 }
 $('btn-compose').addEventListener('click', () => openCompose());
 $('c-send').addEventListener('click', async () => {
   if (!hasBackend || !realMode || !$('c-from').value) { $('compose').close(); toast('Connecte d’abord un compte pour envoyer'); return; }
   $('c-send').disabled = true; $('c-send').textContent = outgoing.length ? 'Envoi des pièces jointes…' : 'Envoi…';
   try {
-    await invoke('send_mail', { accountId: $('c-from').value, to: $('c-to').value, subject: $('c-subj').value, body: $('c-body').value,
+    const content = serializeEditor();
+    await invoke('send_mail', { accountId: $('c-from').value, to: $('c-to').value, subject: $('c-subj').value, body: content.text,
+      html: content.html, inlineImages: content.images,
       attachments: outgoing.map((a) => (a.path ? { name: a.name, path: a.path } : { name: a.name, data: a.data })) });
     const n = outgoing.length;
-    outgoing = []; renderOutgoing();
+    outgoing = []; renderOutgoing(); editor.textContent = '';
     $('compose').close(); toast(n ? `Message envoyé avec ${n} pièce${n > 1 ? 's' : ''} jointe${n > 1 ? 's' : ''}` : 'Message envoyé'); st.loaded.sent = false;
   } catch (e) { showInfo('Envoi impossible', String(e)); }
   finally { $('c-send').disabled = false; $('c-send').textContent = 'Envoyer'; }

@@ -32,6 +32,19 @@ pub struct OutgoingAttachment {
     pub path: Option<String>,
 }
 
+/// Image collée dans le corps du message (HTML) : référencée par `cid:<cid>` dans le HTML.
+#[derive(Debug, Clone, Deserialize)]
+pub struct InlineImage {
+    pub cid: String,
+    pub name: String,
+    /// Contenu en base64.
+    pub data: String,
+}
+
+fn valid_cid(cid: &str) -> bool {
+    !cid.is_empty() && cid.len() <= 100 && cid.chars().all(|c| c.is_ascii_alphanumeric() || "._-@".contains(c))
+}
+
 /// Lit le contenu des pièces jointes et contrôle la taille totale.
 pub fn load_attachments(list: &[OutgoingAttachment]) -> Result<Vec<(String, Vec<u8>)>> {
     let mut out = Vec::new();
@@ -103,6 +116,21 @@ pub fn send_mail(
     body: &str,
     attachments: &[OutgoingAttachment],
 ) -> Result<()> {
+    send_mail_rich(provider, from, access_token, to, subject, body, None, &[], attachments)
+}
+
+/// Construit le message. Avec `html` (images collées dans le texte) :
+/// multipart/alternative (texte brut + multipart/related HTML et images), puis les pièces jointes.
+#[allow(clippy::too_many_arguments)]
+pub fn build_message(
+    from: &str,
+    to: &str,
+    subject: &str,
+    body: &str,
+    html: Option<&str>,
+    inline: &[InlineImage],
+    attachments: &[OutgoingAttachment],
+) -> Result<Message> {
     let mut builder = Message::builder().from(from.parse().context("adresse d'expédition invalide")?);
     let mut count = 0;
     for r in to.split(|c| c == ',' || c == ';').map(str::trim).filter(|s| !s.is_empty()) {
@@ -113,18 +141,63 @@ pub fn send_mail(
         bail!("indique au moins un destinataire");
     }
     let files = load_attachments(attachments)?;
+    let mut total: u64 = files.iter().map(|(_, b)| b.len() as u64).sum();
     let builder = builder.subject(subject.trim());
-    let message = if files.is_empty() {
-        builder.header(ContentType::TEXT_PLAIN).body(body.to_string())
-    } else {
-        let mut parts = MultiPart::mixed().singlepart(SinglePart::plain(body.to_string()));
-        for (name, bytes) in files {
-            let ct = mime_of(&name);
-            parts = parts.singlepart(Attachment::new(name).body(bytes, ct));
+
+    // Corps : texte seul, ou texte + HTML avec images intégrées.
+    let content: Option<MultiPart> = match html.filter(|h| !h.trim().is_empty()) {
+        None => None,
+        Some(h) => {
+            let mut related = MultiPart::related().singlepart(SinglePart::html(h.to_string()));
+            for img in inline {
+                if !valid_cid(&img.cid) {
+                    bail!("image collée invalide");
+                }
+                let bytes = base64::engine::general_purpose::STANDARD.decode(img.data.as_bytes()).with_context(|| format!("image illisible : {}", img.name))?;
+                total += bytes.len() as u64;
+                if total > MAX_ATTACHMENTS {
+                    bail!("images et pièces jointes trop lourdes : 25 Mo au maximum au total (limite de Gmail)");
+                }
+                let name = clean_name(&img.name);
+                let ct = mime_of(&name);
+                related = related.singlepart(Attachment::new_inline_with_name(img.cid.clone(), name).body(bytes, ct));
+            }
+            Some(MultiPart::alternative().singlepart(SinglePart::plain(body.to_string())).multipart(related))
         }
-        builder.multipart(parts)
+    };
+
+    let message = match (content, files.is_empty()) {
+        (None, true) => builder.header(ContentType::TEXT_PLAIN).body(body.to_string()),
+        (Some(alt), true) => builder.multipart(alt),
+        (content, false) => {
+            let mut parts = match content {
+                Some(alt) => MultiPart::mixed().multipart(alt),
+                None => MultiPart::mixed().singlepart(SinglePart::plain(body.to_string())),
+            };
+            for (name, bytes) in files {
+                let ct = mime_of(&name);
+                parts = parts.singlepart(Attachment::new(name).body(bytes, ct));
+            }
+            builder.multipart(parts)
+        }
     }
     .map_err(|e| anyhow!("message invalide : {e}"))?;
+    Ok(message)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn send_mail_rich(
+    provider: &str,
+    from: &str,
+    access_token: &str,
+    to: &str,
+    subject: &str,
+    body: &str,
+    html: Option<&str>,
+    inline: &[InlineImage],
+    attachments: &[OutgoingAttachment],
+) -> Result<()> {
+    let message = build_message(from, to, subject, body, html, inline, attachments)?;
 
     let transport = if provider == "microsoft" {
         SmtpTransport::starttls_relay(microsoft_host(from))?
@@ -166,6 +239,23 @@ mod tests {
         assert!(load_attachments(&[OutgoingAttachment { name: "d".into(), data: None, path: Some("/".into()) }]).is_err());
         assert_eq!(mime_of("photo.JPG"), ContentType::parse("image/jpeg").unwrap());
         assert_eq!(mime_of("inconnu.xyz"), ContentType::parse("application/octet-stream").unwrap());
+    }
+
+    #[test]
+    fn message_avec_image_collee() {
+        let img = InlineImage { cid: "img1@sxm".into(), name: "capture.png".into(), data: "iVBORw0KGgo=".into() };
+        let att = OutgoingAttachment { name: "a.pdf".into(), data: Some("JVBERg==".into()), path: None };
+        let m = build_message("a@b.com", "c@d.com", "s", "Bonjour [Image]", Some("<p>Bonjour <img src=\"cid:img1@sxm\"></p>"), &[img.clone()], &[att]).unwrap();
+        let raw = String::from_utf8(m.formatted()).unwrap();
+        for part in ["multipart/mixed", "multipart/alternative", "multipart/related", "text/html", "image/png", "Content-ID: <img1@sxm>", "application/pdf"] {
+            assert!(raw.contains(part), "absent : {part}");
+        }
+        let m = build_message("a@b.com", "c@d.com", "s", "b", Some("<p>b</p>"), &[img], &[]).unwrap();
+        assert!(!String::from_utf8(m.formatted()).unwrap().contains("multipart/mixed"));
+        let bad = InlineImage { cid: "a b>".into(), name: "x.png".into(), data: "".into() };
+        assert!(build_message("a@b.com", "c@d.com", "s", "b", Some("<p>b</p>"), &[bad], &[]).is_err());
+        let m = build_message("a@b.com", "c@d.com", "s", "b", None, &[], &[]).unwrap();
+        assert!(String::from_utf8(m.formatted()).unwrap().contains("text/plain"));
     }
 
     #[test]

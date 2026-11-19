@@ -204,6 +204,8 @@ async fn send_mail(
     subject: String,
     body: String,
     attachments: Option<Vec<sxm_core::OutgoingAttachment>>,
+    html: Option<String>,
+    inline_images: Option<Vec<sxm_core::InlineImage>>,
     cache: State<'_, Cache>,
 ) -> CmdResult<()> {
     let cache = cache.inner().clone();
@@ -211,7 +213,17 @@ async fn send_mail(
         let cfg = store::load_config()?;
         let account = store::get_account(&account_id)?;
         let token = cache.access_token(&cfg, &account)?;
-        sxm_core::send_mail(&account.provider, &account.email, &token, &to, &subject, &body, &attachments.unwrap_or_default())
+        sxm_core::send_mail_rich(
+            &account.provider,
+            &account.email,
+            &token,
+            &to,
+            &subject,
+            &body,
+            html.as_deref(),
+            &inline_images.unwrap_or_default(),
+            &attachments.unwrap_or_default(),
+        )
     })
     .await
     .map_err(join_err)?

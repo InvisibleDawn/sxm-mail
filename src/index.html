@@ -101,7 +101,9 @@
     <label for="c-from">De</label><select id="c-from"></select>
     <label for="c-to">À</label><input id="c-to" type="email" placeholder="destinataire@exemple.com">
     <label for="c-subj">Objet</label><input id="c-subj" type="text">
-    <label for="c-body">Message</label><textarea id="c-body" rows="10"></textarea>
+    <label id="c-body-label">Message</label>
+    <div id="c-body" class="editor" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="c-body-label" data-placeholder="Écris ton message… (tu peux y coller des images)"></div>
+    <input type="file" id="c-image" accept="image/*" multiple hidden>
     <div class="c-atts" id="c-atts" aria-live="polite"></div>
     <input type="file" id="c-file" multiple hidden>
     <p class="drop-hint" id="drop-hint" hidden>Dépose les fichiers ici pour les joindre</p>
@@ -109,6 +111,10 @@
       <button type="button" class="btn-attach" id="c-attach" title="Joindre des fichiers (ou glisse-les sur la fenêtre)">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.3 3.3 0 0 1 4.7 4.7L10 17.4a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/></svg>
         Joindre un fichier
+      </button>
+      <button type="button" class="btn-attach img" id="c-insert-image" title="Insérer une image dans le texte (ou colle-la avec Ctrl+V / ⌘V)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-4.5-4.5L5 21"/></svg>
+        Image
       </button>
       <span class="spacer-x"></span>
       <button value="cancel" type="submit" class="btn-ghost">Annuler</button>

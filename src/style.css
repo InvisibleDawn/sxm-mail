@@ -196,7 +196,7 @@ dialog h2 { margin: 0 0 12px; font-size: 19px; font-weight: 800; }
 dialog label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin: 12px 0 5px; }
 dialog input, dialog textarea, dialog select { width: 100%; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--bg); color: var(--fg); padding: 10px 12px; font-size: 14px; }
 dialog input:focus, dialog textarea:focus, dialog select:focus { outline: none; border-color: var(--accent); }
-.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
 .btn-primary { height: 40px; border: none; border-radius: 12px; background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff; font-weight: 700; padding: 0 20px; box-shadow: 0 6px 16px rgba(79,70,229,.28); white-space: nowrap; }
 .btn-primary:hover { filter: brightness(1.07); }
 .btn-primary:disabled { opacity: .6; cursor: default; }
@@ -263,6 +263,15 @@ dialog label.check input { width: 18px; height: 18px; accent-color: #8b5cf6; fle
 .upd-status { margin: 0; font-size: 13px; color: var(--muted); }
 .upd-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
+/* Éditeur du message : texte brut + images collées */
+.editor { min-height: 220px; max-height: 46vh; overflow-y: auto; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--bg); color: var(--fg); padding: 10px 12px; font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; -webkit-user-select: text; user-select: text; cursor: text; }
+.editor:focus { border-color: var(--accent); }
+.editor:empty::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; }
+.editor img { max-width: 100%; max-height: 360px; height: auto; border-radius: 8px; vertical-align: bottom; margin: 4px 0; box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+.editor img::selection { background: transparent; }
+.btn-attach.img { background: color-mix(in srgb, #ec4899 13%, var(--bg)); color: #db2777; }
+.btn-attach.img:hover { background: #ec4899; color: #fff; }
+
 /* Pièces jointes à l'envoi */
 .c-atts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .c-atts:empty { display: none; }
@@ -296,3 +305,4 @@ dialog label.check input { width: 18px; height: 18px; accent-color: #8b5cf6; fle
 /* Le volet de gauche défile au lieu d'écraser ses éléments ; l'illustration s'efface sur les petits écrans */
 .sidebar > * { flex-shrink: 0; }
 @media (max-height: 1000px) { .side-art { display: none; } }
+#compose { width: min(760px, 94vw); }
