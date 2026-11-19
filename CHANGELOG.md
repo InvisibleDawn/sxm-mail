@@ -1,5 +1,10 @@
 # Journal des versions de SXM Mail
 
+## 0.3.3 (2026-11-19)
+
+### Nouveautés
+- Nouveau logo : une boîte aux lettres au drapeau levé, sur fond bleu ciel (Dock, menu des applications et en haut à gauche de la fenêtre).
+
 ## 0.3.2 (2026-11-19)
 
 ### Nouveautés
