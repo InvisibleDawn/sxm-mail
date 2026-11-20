@@ -1,5 +1,10 @@
 # Journal des versions de SXM Mail
 
+## 0.3.5 (2026-11-20)
+
+### Corrections
+- Écriture identique sur Fedora et macOS : la police Inter est maintenant intégrée à l'application (elle n'était utilisée que si elle était installée sur l'ordinateur).
+
 ## 0.3.4 (2026-11-20)
 
 ### Corrections
