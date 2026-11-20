@@ -1,5 +1,11 @@
 # Journal des versions de SXM Mail
 
+## 0.3.8 (2026-11-20)
+
+### Nouveautés
+- Notifications du bureau pour les nouveaux mails (onglet Prioritaire), quand la fenêtre de SXM Mail n'est pas au premier plan.
+- Corbeille directement dans la liste : survole un mail et clique sur la corbeille pour le supprimer sans l'ouvrir (pratique en cas de doute d'hameçonnage). Dans la corbeille et le courrier indésirable, elle supprime définitivement, après confirmation.
+
 ## 0.3.7 (2026-11-20)
 
 ### Nouveautés

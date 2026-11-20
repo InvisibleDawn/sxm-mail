@@ -1,6 +1,6 @@
 [package]
 name = "sxm-mail"
-version = "0.3.7"
+version = "0.3.8"
 description = "Client mail de bureau multi-comptes (Gmail, Office 365, Hotmail)"
 edition = "2021"
 
@@ -13,6 +13,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+# Notifications du bureau (nouveaux mails) : D-Bus sous Linux, Centre de notifications sous macOS
+tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"

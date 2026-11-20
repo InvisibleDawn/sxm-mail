@@ -178,6 +178,14 @@ async fn install_update(app: AppHandle, url: String, name: String, digest: Optio
     .map_err(msg)
 }
 
+/// Notification du bureau pour les nouveaux mails.
+#[tauri::command]
+fn notify(app: AppHandle, title: String, body: String) -> CmdResult<()> {
+    use tauri_plugin_notification::NotificationExt;
+    let clip = |t: &str, n: usize| -> String { if t.chars().count() > n { t.chars().take(n).collect::<String>() + "…" } else { t.to_string() } };
+    app.notification().builder().title(clip(&title, 120)).body(clip(&body, 400)).show().map_err(|e| format!("notification impossible : {e}"))
+}
+
 #[tauri::command]
 fn restart_app(app: AppHandle) {
     app.restart();
@@ -278,6 +286,7 @@ fn cache_save(data: String) -> CmdResult<()> {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage::<Cache>(Arc::new(oauth::TokenCache::default()))
         .invoke_handler(tauri::generate_handler![
             app_info,
@@ -294,6 +303,7 @@ pub fn run() {
             check_update,
             install_update,
             restart_app,
+            notify,
             message_action,
             save_attachment,
             open_url,

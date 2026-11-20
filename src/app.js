@@ -115,6 +115,12 @@ function toast(msg) {
 }
 
 function msgButton(m) {
+  const final = m.state === 'trash' || m.state === 'junk';
+  const del = `<button type="button" class="msg-del" data-del="${esc(m.id)}" title="${final ? 'Supprimer définitivement' : 'Supprimer sans ouvrir'}" aria-label="${final ? 'Supprimer définitivement' : 'Supprimer'} : ${esc(m.subject)}">${final ? ICON.purge : ICON.delete}</button>`;
+  return `<div class="msg-row">` + msgInner(m) + del + `</div>`;
+}
+
+function msgInner(m) {
   return `<button type="button" class="msg ${m.unread ? 'unread' : ''} ${m.id === st.sel ? 'on' : ''}" data-id="${esc(m.id)}" style="--c:${avatarColor(m)}">
     <span class="avatar" aria-hidden="true">${esc(initials(m.from))}</span>
     <span class="msg-body">
@@ -317,7 +323,7 @@ const TARGET_TEXT = { inbox: 'Remis dans la boîte de réception', trash: 'Plac�
 
 // Déplace un message vers un dossier : target = inbox | trash | archive | junk | u:<nom>.
 async function moveTo(m, target, opts = {}) {
-  const nxt = opts.quiet ? null : nextAfter(m.id);
+  const nxt = opts.quiet || opts.noAdvance ? null : nextAfter(m.id);
   const before = m.state;
   const label = isUserKey(target) ? target.slice(2) : null;
   m.state = target; if (st.sel === m.id && !opts.quiet) st.sel = null;
@@ -355,6 +361,25 @@ async function ensureFolder(accountId, label) {
 }
 const sortFolders = () => st.userFolders.sort((a, b) => a.label.localeCompare(b.label, 'fr', { sensitivity: 'base' }));
 
+// Suppression définitive (corbeille, indésirables), avec confirmation.
+async function purgeMessage(m, opts = {}) {
+  if (!await confirmBox('Supprimer définitivement ?', `« ${m.subject} » sera effacé de Gmail. Cette action est irréversible.`, 'Supprimer définitivement')) return;
+  const nxt = opts.noAdvance ? null : nextAfter(m.id);
+  if (m.real) {
+    try { await invoke('message_action', { accountId: m.acct, mailbox: m.mailbox || 'INBOX', uid: m.uid, action: 'purge' }); }
+    catch (e) { showInfo('Suppression impossible', String(e)); return; }
+  }
+  MESSAGES = MESSAGES.filter((x) => x !== m); if (st.sel === m.id) st.sel = null;
+  toast('Message supprimé définitivement'); saveCache(); if (nxt) select(nxt); else render();
+}
+
+// Corbeille dans la liste : supprime sans ouvrir le mail (utile en cas de doute, ex. hameçonnage).
+function deleteFromList(id) {
+  const m = byId(id); if (!m) return;
+  if (m.state === 'trash' || m.state === 'junk') purgeMessage(m, { noAdvance: true });
+  else moveTo(m, 'trash', { noAdvance: true });
+}
+
 async function act(a) {
   const m = byId(st.sel); if (!m) return;
   if (a === 'reply') { openCompose(m); return; }
@@ -383,15 +408,7 @@ async function act(a) {
     const nxt = nextAfter(m.id); m.state = a === 'snooze' ? 'snoozed' : 'inbox'; st.sel = null; render(); saveCache();
     toast(a === 'snooze' ? 'Déplacé dans Rappels (sur cet ordinateur uniquement)' : 'Remis dans la boîte de réception'); if (nxt) select(nxt); return;
   }
-  if (a === 'purge') {
-    if (!await confirmBox('Supprimer définitivement ?', `« ${m.subject} » sera effacé de Gmail. Cette action est irréversible.`, 'Supprimer définitivement')) return;
-    const nxt = nextAfter(m.id);
-    if (m.real) {
-      try { await gmail('purge'); } catch (e) { showInfo('Suppression impossible', String(e)); return; }
-    }
-    MESSAGES = MESSAGES.filter((x) => x !== m); st.sel = null;
-    toast('Message supprimé définitivement'); saveCache(); if (nxt) select(nxt); else render(); return;
-  }
+  if (a === 'purge') { purgeMessage(m); return; }
   // Un message en Rappels est toujours dans la boîte de réception côté Gmail.
   if (a === 'delete') moveTo(m, 'trash');
   else if (a === 'archive') moveTo(m, 'archive');
@@ -400,9 +417,10 @@ async function act(a) {
 }
 
 document.addEventListener('click', (e) => {
-  const t = e.target.closest('[data-id],[data-folder],[data-act],[data-rm],[data-acct],[data-tab],[data-att],[data-file]');
+  const t = e.target.closest('[data-del],[data-id],[data-folder],[data-act],[data-rm],[data-acct],[data-tab],[data-att],[data-file]');
   if (!t) return;
-  if (t.dataset.file != null) fileInto(t.dataset.file);
+  if (t.dataset.del) deleteFromList(t.dataset.del);
+  else if (t.dataset.file != null) fileInto(t.dataset.file);
   else if (t.dataset.att != null) saveAttachment(Number(t.dataset.att));
   else if (t.dataset.rm) removeAccount(t.dataset.rm);
   else if (t.dataset.tab) { st.tab = t.dataset.tab; st.sel = null; render(); }
@@ -855,6 +873,7 @@ async function loadFolder(k, mode) {
 async function refresh(mode) {
   if (!realMode || st.refreshing) return;
   st.refreshing = true; $('btn-refresh').classList.add('spin');
+  const known = new Set(MESSAGES.map((m) => m.id));
   const accounts = ACCOUNTS.slice();
   const results = await Promise.allSettled(accounts.map((a) => invoke('fetch_folder', { accountId: a.id, kind: 'inbox', name: null, beforeUid: null })));
   let added = 0; const errors = [];
@@ -868,11 +887,20 @@ async function refresh(mode) {
   if (st.sel && !byId(st.sel)) st.sel = null;
   render(); saveCache();
   const filed = await applyFolderRules();
+  // Notification du bureau : nouveaux mails « Prioritaire » non lus (pas au tout premier chargement, sans cache).
+  if (mode !== 'startup' || st.hadCache) notifyNew(MESSAGES.filter((m) => m.real && m.state === 'inbox' && m.unread && !known.has(m.id) && tabOf(m) === 'focused'));
   const announce = mode === 'manual' || mode === 'auto' || (mode === 'startup' && st.hadCache);
   if (added && announce) toast((added === 1 ? '1 nouveau mail' : added + ' nouveaux mails') + (filed ? ` (${filed} classé${filed > 1 ? 's' : ''} automatiquement)` : ''));
   else if (filed) toast(`${filed} mail${filed > 1 ? 's' : ''} classé${filed > 1 ? 's' : ''} automatiquement`);
   else if (mode === 'manual') toast(errors.length ? 'Actualisation impossible' : 'Aucun nouveau mail');
   if (errors.length && mode !== 'auto') showInfo(mode === 'startup' ? 'Certains comptes n’ont pas pu être chargés' : 'Actualisation impossible', errors.join('\n\n'));
+}
+
+function notifyNew(list) {
+  if (!list.length || !hasBackend || document.hasFocus()) return;
+  const title = list.length === 1 ? list[0].from : `${list.length} nouveaux mails`;
+  const body = list.length === 1 ? list[0].subject : list.slice(0, 3).map((m) => `${m.from} : ${m.subject}`).join('\n') + (list.length > 3 ? `\n… et ${list.length - 3} autre${list.length > 4 ? 's' : ''}` : '');
+  invoke('notify', { title, body }).catch(() => {});
 }
 
 // « Toujours classer les mails de X ici » : les nouveaux mails reçus sont rangés dans Gmail.

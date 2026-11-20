@@ -152,6 +152,14 @@ svg { flex: none; }
 .btn-more:hover { background: var(--hi); border-color: var(--accent); }
 .btn-more:disabled { color: var(--muted); cursor: default; }
 
+/* Corbeille dans la liste : apparaît au survol, supprime sans ouvrir le mail */
+.msg-row { position: relative; }
+.msg-del { position: absolute; right: 10px; bottom: 10px; width: 32px; height: 32px; border: none; border-radius: 9px; display: grid; place-items: center;
+  background: color-mix(in srgb, #f43f5e 14%, var(--bg)); color: #e11d48; opacity: 0; transform: scale(.9); transition: opacity .12s, transform .12s, background .12s; box-shadow: 0 2px 8px rgba(225,29,72,.18); }
+.msg-row:hover .msg-del, .msg-del:focus-visible, .msg-row:has(.msg.on) .msg-del { opacity: 1; transform: none; }
+.msg-del:hover { background: #f43f5e; color: #fff; }
+.msg-row:hover .snip, .msg-row:has(.msg.on) .snip { padding-right: 34px; }
+
 /* Volet de lecture */
 .reader { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .reading { flex: 1; min-height: 0; overflow-y: auto; padding: 0 28px 24px; display: flex; flex-direction: column; }
