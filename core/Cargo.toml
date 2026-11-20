@@ -22,6 +22,9 @@ lettre = { version = "0.11", default-features = false, features = ["smtp-transpo
 # Trousseau système : Secret Service (GNOME Keyring / KWallet) sous Linux, Trousseau d'accès sous macOS.
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", default-features = false, features = ["sync-secret-service", "crypto-rust", "vendored"] }
+# OpenSSL intégré au programme (compilé depuis les sources) : l'appli ne dépend plus de la version
+# d'OpenSSL du système (Fedora 45 est passé à OpenSSL 4 et n'a plus libssl.so.3 par défaut).
+openssl = { version = "0.10", features = ["vendored"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", default-features = false, features = ["apple-native"] }

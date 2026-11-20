@@ -1,5 +1,11 @@
 # Journal des versions de SXM Mail
 
+## 0.3.4 (2026-11-20)
+
+### Corrections
+- Fedora 45 : l'application ne démarrait plus (« libssl.so.3 introuvable ») car Fedora 45 est passé à OpenSSL 4. OpenSSL est désormais intégré à SXM Mail, qui ne dépend plus de la version installée sur le système.
+- Fedora : le logo s'affiche tout de suite après l'installation (cache des icônes rafraîchi automatiquement).
+
 ## 0.3.3 (2026-11-19)
 
 ### Nouveautés
