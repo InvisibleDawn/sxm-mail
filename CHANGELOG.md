@@ -1,5 +1,10 @@
 # Journal des versions de SXM Mail
 
+## 0.3.6 (2026-11-20)
+
+### Nouveautés
+- Nouveau logo : la mascotte SXM en facteur (casquette bleue, bandana orange) qui tient une lettre, sur fond bleu ciel. Elle remplace la boîte aux lettres provisoire, dans le Dock, le menu des applications et en haut de la fenêtre.
+
 ## 0.3.5 (2026-11-20)
 
 ### Corrections

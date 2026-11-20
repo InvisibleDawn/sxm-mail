@@ -61,7 +61,7 @@ svg { flex: none; }
 /* Barre du haut */
 .topbar { display: flex; align-items: center; gap: 16px; padding: 14px 18px 8px; }
 .brand { display: flex; align-items: center; gap: 12px; width: 252px; flex-shrink: 0; }
-.brand .logo { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, #38BDF8, #2563EB); display: grid; place-items: center; box-shadow: 0 6px 14px rgba(37,99,235,.35); }
+.brand .logo { width: 44px; height: 44px; flex: none; display: block; filter: drop-shadow(0 4px 10px rgba(37,99,235,.3)); }
 .brand strong { display: block; font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
 .brand small { display: block; color: var(--muted); font-size: 12px; }
 .search { flex: 1; max-width: 640px; margin: 0 auto; position: relative; }
