@@ -1,5 +1,10 @@
 # Journal des versions de SXM Mail
 
+## 0.3.7 (2026-11-20)
+
+### Nouveautés
+- Logo officiel : la mascotte SXM en facteur (casquette, sacoche, lettre, pouce levé) sur son écusson orange, tirée du visuel « SXM Mail — Your friendly mail app ».
+
 ## 0.3.6 (2026-11-20)
 
 ### Nouveautés
