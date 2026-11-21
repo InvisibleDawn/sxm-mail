@@ -25,7 +25,8 @@
   "bundle": {
     "active": true,
     "targets": [
-      "rpm"
+      "rpm",
+      "deb"
     ],
     "category": "Productivity",
     "shortDescription": "Client mail multi-comptes",
@@ -41,6 +42,10 @@
     "license": "MIT",
     "linux": {
       "rpm": {
+        "postInstallScript": "packaging/rpm-post.sh",
+        "postRemoveScript": "packaging/rpm-post.sh"
+      },
+      "deb": {
         "postInstallScript": "packaging/rpm-post.sh",
         "postRemoveScript": "packaging/rpm-post.sh"
       }

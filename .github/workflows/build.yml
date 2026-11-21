@@ -1,6 +1,7 @@
 # Compile SXM Mail sur les machines de GitHub et publie les fichiers sur la page Releases :
 # - macOS : .dmg universel (Mac Intel et Apple Silicon) ;
-# - Fedora : .rpm (x86_64).
+# - Fedora : .rpm (x86_64) ;
+# - Debian 13 / SXM Linux : .deb (x86_64).
 # Les applications installées se mettent à jour d'elles-mêmes à partir de cette page.
 # Lancement : automatique à chaque envoi sur main (ou étiquette v0.x.y), ou onglet « Actions » → « Run workflow ».
 name: Compilation SXM Mail
@@ -69,11 +70,45 @@ jobs:
           path: src-tauri/target/release/bundle/rpm/*.rpm
           if-no-files-found: error
 
+  debian:
+    name: Debian 13 / SXM Linux (.deb)
+    runs-on: ubuntu-latest
+    container: debian:13
+    timeout-minutes: 60
+    steps:
+      - name: Bibliothèques système
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            git ca-certificates build-essential curl file pkg-config libssl-dev libdbus-1-dev \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Outil de build Tauri
+        run: cargo install tauri-cli --version "^2" --locked
+      - name: Tests du cœur
+        run: cargo test --manifest-path core/Cargo.toml
+      - name: Compilation de l'application
+        working-directory: src-tauri
+        run: cargo tauri build --bundles deb
+      - name: Le paquet s'installe avec apt
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y ./src-tauri/target/release/bundle/deb/*.deb
+          test -x /usr/bin/sxm-mail
+      - uses: actions/upload-artifact@v7
+        with:
+          name: SXM-Mail-Debian
+          path: src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
   release:
     name: Publication sur la page Releases
-    needs: [macos, fedora]
+    needs: [macos, fedora, debian]
     # Publie ce qui est prêt, même si une plateforme a échoué (ex. aucun Mac disponible chez GitHub).
-    if: always() && (needs.macos.result == 'success' || needs.fedora.result == 'success')
+    if: always() && (needs.macos.result == 'success' || needs.fedora.result == 'success' || needs.debian.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -93,6 +128,7 @@ jobs:
             echo "---"
             echo "**macOS** (Intel et Apple Silicon) : \`SXM.Mail_${v}_universal.dmg\` — non signée par Apple : au premier lancement, Réglages Système → Confidentialité et sécurité → Ouvrir quand même."
             echo "**Fedora** : \`SXM.Mail-${v}-1.x86_64.rpm\` — \`sudo dnf install ./SXM.Mail-${v}-1.x86_64.rpm\`"
+            echo "**Debian / Ubuntu / SXM Linux** : \`SXM.Mail_${v}_amd64.deb\` — \`sudo apt install ./SXM.Mail_${v}_amd64.deb\`"
             echo
             echo "Les versions déjà installées proposent la mise à jour d'elles-mêmes."
           } >> notes.md
