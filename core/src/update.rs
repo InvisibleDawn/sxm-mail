@@ -36,10 +36,24 @@ pub fn wanted_asset(name: &str) -> bool {
     if cfg!(target_os = "macos") {
         n.ends_with(".dmg")
     } else if cfg!(target_os = "linux") {
-        n.ends_with(".x86_64.rpm") && cfg!(target_arch = "x86_64")
+        cfg!(target_arch = "x86_64") && linux_asset(&n, is_debian())
     } else {
         false
     }
+}
+
+/// Debian, Ubuntu, SXM Linux : paquet .deb ; Fedora : paquet .rpm.
+fn linux_asset(name: &str, debian: bool) -> bool {
+    if debian {
+        name.ends_with("_amd64.deb")
+    } else {
+        name.ends_with(".x86_64.rpm")
+    }
+}
+
+/// Système de la famille Debian (Debian, Ubuntu, SXM Linux).
+fn is_debian() -> bool {
+    Path::new("/etc/debian_version").exists()
 }
 
 /// Seuls les fichiers publiés sur le dépôt officiel sont acceptés.
@@ -128,15 +142,18 @@ fn hex(bytes: &[u8]) -> String {
 
 /// Installe le fichier téléchargé. Renvoie "installed" (redémarrage nécessaire).
 /// - Fedora : `pkexec dnf install` (le mot de passe est demandé par le système) ;
+/// - Debian, Ubuntu, SXM Linux : `pkexec apt-get install` du .deb (dépendances comprises) ;
 /// - macOS : l'application est remplacée par celle du .dmg (dans le même dossier).
 pub fn install(file: &Path) -> Result<&'static str> {
     #[cfg(target_os = "linux")]
     {
+        let deb = file.extension().is_some_and(|e| e == "deb");
+        let installer: &[&str] = if deb { &["apt-get", "install", "-y"] } else { &["dnf", "install", "-y"] };
         let out = std::process::Command::new("pkexec")
-            .args(["dnf", "install", "-y"])
+            .args(installer)
             .arg(file)
             .output()
-            .context("lancement de dnf")?;
+            .with_context(|| format!("lancement de {}", installer[0]))?;
         let _ = std::fs::remove_file(file);
         if !out.status.success() {
             let log = String::from_utf8_lossy(&out.stderr).trim().to_string();
@@ -231,6 +248,14 @@ mod tests {
         assert!(!official_url("https://github.com/autre/sxm-mail/releases/download/v1/x.dmg"));
         assert!(!official_url("https://github.com/InvisibleDawn/sxm-mail/releases/download/../../x"));
         assert!(!official_url("http://github.com/InvisibleDawn/sxm-mail/releases/download/v1/x.dmg"));
+    }
+
+    #[test]
+    fn paquet_linux_selon_systeme() {
+        assert!(linux_asset("sxm.mail_0.4.0_amd64.deb", true));
+        assert!(!linux_asset("sxm.mail-0.4.0-1.x86_64.rpm", true));
+        assert!(linux_asset("sxm.mail-0.4.0-1.x86_64.rpm", false));
+        assert!(!linux_asset("sxm.mail_0.4.0_amd64.deb", false));
     }
 
     #[test]
